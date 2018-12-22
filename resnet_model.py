@@ -121,18 +121,25 @@ class ResNet(object):
       x = self._global_avg_pool(x)
 
     with tf.variable_scope('logit'):
-      logits = self._fully_connected(x, self.hps.num_classes)
+      # logits = self._fully_connected(x, self.hps.num_classes) # modified by ronny
+      logits = tf.layers.dense(x, self.hps.num_classes)
       self.predictions = tf.nn.softmax(logits)
 
-    with tf.variable_scope('modxent'):
-      self.predictions = self.dirtyOne + self.dirtyNeg * self.predictions
-      xent = tf.reduce_mean(-tf.reduce_sum(self.labels * tf.log(self.predictions), reduction_indices=[1]))
+    if self.mode=='train':
+      # cross entropy only for train
+      with tf.variable_scope('xent'): # addedby ronny
+        self.dirtyOne = tf.placeholder(name='dirtyOne', dtype=tf.float32, shape=[None, 10])
+        self.dirtyNeg = tf.placeholder(name='dirtyNeg', dtype=tf.float32, shape=[None, 10])
+        self.dirtyPredictions = self.dirtyOne + self.dirtyNeg * self.predictions
+        self.xent = tf.reduce_mean(-tf.reduce_sum(self.labels * tf.log(self.dirtyPredictions), reduction_indices=[1]))
 
-    # # cross entropy
-    # xent = tf.nn.softmax_cross_entropy_with_logits(
-    #     logits=logits, labels=self.labels)
+    elif self.mode=='eval':
+      # cross entropy, only for eval
+      with tf.variable_scope('xent'):
+        xent = tf.nn.softmax_cross_entropy_with_logits(
+            logits=logits, labels=self.labels)
+        self.xent = tf.reduce_mean(xent)
 
-    self.xent = tf.reduce_mean(xent)
     # self.xentPerExample = xent # todo oct16 added
     tf.summary.scalar(self.mode+'/xent', self.xent)
 

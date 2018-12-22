@@ -15,11 +15,14 @@ parser.add_argument('--ckpt_root', default='/root/ckpt', type=str, help='Parents
 parser.add_argument('--train_data_path', default='/root/datasets/cifar-100-binary/train.bin', type=str, help='Filepattern for training data.')
 parser.add_argument('--eval_data_path', default='/root/datasets/cifar-100-binary/test.bin', type=str, help='Filepattern for eval data')
 parser.add_argument('--bin_path', default='/root/bin', type=str, help='bin: directory of helpful scripts')
-parser.add_argument('--dataset', default='cifar100', type=str, help='cifar10 or cifar100.')
+parser.add_argument('--dataset', default='cifar10', type=str, help='cifar10 or cifar100.')
 # meta
 parser.add_argument('--gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
 parser.add_argument('--cpu_eval', action='store_true', help='use cpu for eval, overrides whatever is on --gpu')
 parser.add_argument('--mode', default='train', type=str, help='train or eval.')
+# poison data
+parser.add_argument('--nodirty', action='store_true')
+parser.add_argument('--fracdirty', default=.5, type=float)
 # network parameters
 parser.add_argument('--num_resunits', default=3, type=int, help='Number of residual units n. There are 6*n+2 layers')
 parser.add_argument('--resnet_width', default=1, type=int, help='Multiplier of the width of hidden layers. Base is (16,32,64)')
@@ -56,7 +59,7 @@ if FLAGS.scratch: FLAGS.pretrain_url = FLAGS.pretrain_dir = None
 if not os.path.exists(join(log_dir, 'comet_expt_key.txt')):
   # initialize comet experiment
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-                          project_name='hessreg-reproduce', workspace="wronnyhuang")
+                          project_name='sharpcifar', workspace="wronnyhuang")
   # write experiment key
   os.makedirs(log_dir, exist_ok=True)
   with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
@@ -99,7 +102,7 @@ def train(hps):
 
   # start evaluation process
   popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
-  command_valid = 'python src/resnet_main.py --mode=eval ' + ' '.join(sys.argv[1:])
+  command_valid = 'python resnet_main.py --mode=eval ' + ' '.join(sys.argv[1:])
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command: ', command_valid)
 
@@ -123,11 +126,7 @@ def train(hps):
   #     FLAGS.dataset, FLAGS.train_data_path, hps.batch_size, FLAGS.mode, FLAGS.augment)
 
   # build graph [new version]
-  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=.5)
-  images = tf.placeholder(dtype=tf.float32, shape=(None, 32, 32, 3))
-  labels = tf.placeholder(dtype=tf.float32, shape=(None, hps.num_classes))
-
-
+  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=FLAGS.fracdirty)
   model = resnet_model.ResNet(hps, images, labels, FLAGS.mode)
   model.build_graph()
   truth = tf.argmax(model.labels, axis=1)
@@ -183,24 +182,37 @@ def train(hps):
   for epoch in range(FLAGS.epoch_end):
 
     dirtyloaderiter = iter(dirtyloader)
-    for batch_idx, (cleanimages, cleantargets) in enumerate(cleanloader):
+    for batch_idx, (cleanimages, cleantarget) in enumerate(cleanloader):
 
       # get dirty labeled images
-      dirtyimages, dirtytargets = dirtyloaderiter.__next__()
+      dirtyimages, dirtytarget = dirtyloaderiter.__next__()
 
       # change from torch tensor to numpy array
-      dirtyimages = dirtyimages.numpy(); dirtytargets = dirtytargets.numpy()
-      cleanimages = cleanimages.numpy(); cleantargets = cleantargets.numpy()
+      dirtyimages = dirtyimages.permute(0,2,3,1); cleanimages = cleanimages.permute(0,2,3,1)
+      dirtyimages = dirtyimages.numpy(); dirtytarget = dirtytarget.numpy()
+      cleanimages = cleanimages.numpy(); cleantarget = cleantarget.numpy()
+      
+      # convert to onehot
+      dirtytarget = np.eye(hps.num_classes)[dirtytarget]
+      cleantarget = np.eye(hps.num_classes)[cleantarget]
 
       # combine into a batch
       batchimages = np.concatenate([ cleanimages, dirtyimages ])
-      batchtargets = np.concatenate([ cleantargets, dirtytargets ])
-      batchtargets = np.eye(10)[batchtargets] # convert to onehot
+      batchtarget = np.concatenate([ cleantarget, dirtytarget ])
+
+      # a hack needed to pass into the tf placeholder to make poison labels work
+      dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
+      dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
+      if FLAGS.nodirty:
+        dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  0*np.ones_like(dirtytarget) ])
+        dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
+
 
       # run the graph
       summaries, _, global_step, loss, prec = sess.run(
         [all_summaries, model.train_op, model.global_step, model.loss, precision],
-        feed_dict={model.lrn_rate: scheduler._lrn_rate, images: batchimages, labels: batchtargets})
+        feed_dict={model.lrn_rate: scheduler._lrn_rate, images: batchimages, labels: batchtarget,
+                   model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
 
       scheduler.after_run(global_step)
 
@@ -223,16 +235,16 @@ def train(hps):
       #   print(upload_command)
       #   subprocess.run(upload_command, shell=True)
 
-    # closeout script
-    print('TRAIN: Done Training at '+str(global_step)+' steps')
-    os.system(join(FLAGS.bin_path,'rek')+' "mode=eval.*log_root='+FLAGS.log_root+'"') # kill evaluation processes
+  # closeout script
+  print('TRAIN: Done Training at '+str(global_step)+' steps')
+  os.system(join(FLAGS.bin_path,'rek')+' "mode=eval.*log_root='+FLAGS.log_root+'"') # kill evaluation processes
 
-    # retrieve best evaluation result
-    cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
-    metricSummaries = cometapi.get_raw_metric_summaries(experiment.get_key())
-    metricSummaries = {b.pop('name'): b for b in metricSummaries}
-    bestEvalPrecision = metricSummaries['eval/Best Precision']['valueMax']
-    print('sigoptObservation='+str(bestEvalPrecision))
+  # retrieve best evaluation result
+  cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
+  metricSummaries = cometapi.get_raw_metric_summaries(experiment.get_key())
+  metricSummaries = {b.pop('name'): b for b in metricSummaries}
+  bestEvalPrecision = metricSummaries['eval/Best Precision']['valueMax']
+  print('sigoptObservation='+str(bestEvalPrecision))
 
 
 def evaluate(hps):
