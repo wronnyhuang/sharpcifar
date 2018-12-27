@@ -22,14 +22,14 @@ parser.add_argument('--cpu_eval', action='store_true', help='use cpu for eval, o
 parser.add_argument('--mode', default='train', type=str, help='train or eval.')
 # poison data
 parser.add_argument('--nodirty', action='store_true')
-parser.add_argument('--fracdirty', default=.5, type=float)
+parser.add_argument('--fracdirty', default=.5, type=float) # should be < .5 for now
 # network parameters
 parser.add_argument('--num_resunits', default=3, type=int, help='Number of residual units n. There are 6*n+2 layers')
 parser.add_argument('--resnet_width', default=1, type=int, help='Multiplier of the width of hidden layers. Base is (16,32,64)')
 # training hyperparams
 parser.add_argument('--lrn_rate', default=1e-1, type=float, help='initial learning rate to use for training')
 parser.add_argument('--batch_size', default=128, type=int, help='batch size to use for training')
-parser.add_argument('--weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
+parser.add_argument('--weight_decay', default=0.0, type=float, help='coefficient for the weight decay')
 parser.add_argument('--augment', default=True, type=bool, help='use data augmentation.')
 parser.add_argument('--epoch_end', default=256, type=int, help='ending epoch')
 # specreg stuff
@@ -48,7 +48,7 @@ parser.add_argument('--pretrain_dir', default=None, type=str, help='remote direc
 # general helpers
 parser.add_argument('--max_grad_norm', default=30, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 parser.add_argument('--image_size', default=32, type=str, help='Image side length.')
-parser.add_argument('--eval_batch_size', default=50, type=int, help='Smaller means less memory, but more time')
+parser.add_argument('--eval_batch_size', default=100, type=int, help='Smaller means less memory, but more time')
 FLAGS = parser.parse_args()
 log_dir = join(FLAGS.ckpt_root, FLAGS.log_root)
 os.makedirs(log_dir, exist_ok=True)
@@ -59,7 +59,7 @@ if FLAGS.scratch: FLAGS.pretrain_url = FLAGS.pretrain_dir = None
 if not os.path.exists(join(log_dir, 'comet_expt_key.txt')):
   # initialize comet experiment
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-                          project_name='sharpcifar', workspace="wronnyhuang")
+                          project_name='sharpcifar-sigopt', workspace="wronnyhuang")
   # write experiment key
   os.makedirs(log_dir, exist_ok=True)
   with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
@@ -93,7 +93,7 @@ gpu_options = tf.GPUOptions(allow_growth=True)
 timenow = lambda: datetime.now().strftime('%m-%d %H:%M:%S')
 hostname = open('/root/misc/hostname.log').read()
 print('====================> HOST: docker @ '+hostname)
-experiment.log_other('hostname', hostname)
+experiment.log_other('hostmachine', hostname)
 
 # FLAGS = utils.debug_settings(FLAGS)
 if FLAGS.mode == 'train': open('/root/resnet_main.bash','w').write('cd /root/repo/hessreg && python '+' '.join(sys.argv)) # write command to the log
@@ -126,8 +126,8 @@ def train(hps):
   #     FLAGS.dataset, FLAGS.train_data_path, hps.batch_size, FLAGS.mode, FLAGS.augment)
 
   # build graph [new version]
-  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=FLAGS.fracdirty)
-  model = resnet_model.ResNet(hps, images, labels, FLAGS.mode)
+  cleanloader, dirtyloader, testloader, trainloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=FLAGS.fracdirty)
+  model = resnet_model.ResNet(hps, FLAGS.mode)
   model.build_graph()
   truth = tf.argmax(model.labels, axis=1)
   predictions = tf.argmax(model.predictions, axis=1)
@@ -139,7 +139,7 @@ def train(hps):
     def __init__(self):
       self._lrn_rate = 0
       self._spec_coef = FLAGS.spec_coef_init
-    def after_run(self, global_step):
+    def after_run(self, global_step, steps_per_epoch):
       # warmup of spectral coefficient
       num_full_batch = 50000.
       num_warmup_epochs = FLAGS.num_warmup_epochs
@@ -148,11 +148,12 @@ def train(hps):
                         + FLAGS.spec_coef_init
       # warmup of learning rate
       # self._lrn_rate  = FLAGS.lrn_rate*np.minimum(np.maximum((train_step-400000)/num_warmup_steps, 0), 1)
-      if global_step < 40000:
+      epoch = float(global_step)/steps_per_epoch
+      if epoch < 102.4:
         self._lrn_rate = FLAGS.lrn_rate
-      elif global_step < 60000:
+      elif epoch < 153.6:
         self._lrn_rate = FLAGS.lrn_rate*0.1
-      elif global_step < 80000:
+      elif epoch < 204.8:
         self._lrn_rate = FLAGS.lrn_rate*0.01
       else:
         self._lrn_rate = FLAGS.lrn_rate*0.001
@@ -169,7 +170,6 @@ def train(hps):
   tf.train.start_queue_runners(sess)
   scheduler = Scheduler()
 
-
   # load checkpoint
   ckpt_state = tf.train.get_checkpoint_state(log_dir)
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
@@ -181,11 +181,9 @@ def train(hps):
 
   for epoch in range(FLAGS.epoch_end):
 
-    dirtyloaderiter = iter(dirtyloader)
-    for batch_idx, (cleanimages, cleantarget) in enumerate(cleanloader):
-
-      # get dirty labeled images
-      dirtyimages, dirtytarget = dirtyloaderiter.__next__()
+    # dirtyloaderiter = iter(dirtyloader)
+    cleancorr = dirtycorr = cleantot = dirtytot = 0
+    for (cleanimages, cleantarget), (dirtyimages, dirtytarget) in zip(cleanloader, utils.itercycle(dirtyloader)):
 
       # change from torch tensor to numpy array
       dirtyimages = dirtyimages.permute(0,2,3,1); cleanimages = cleanimages.permute(0,2,3,1)
@@ -201,28 +199,75 @@ def train(hps):
       batchtarget = np.concatenate([ cleantarget, dirtytarget ])
 
       # a hack needed to pass into the tf placeholder to make poison labels work
+      cleanOne = np.concatenate([ 0*np.ones_like(cleantarget),  0*np.ones_like(dirtytarget) ])
+      cleanNeg = np.concatenate([ 1*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
       dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
       dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
-      if FLAGS.nodirty:
-        dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  0*np.ones_like(dirtytarget) ])
-        dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
-
+      if FLAGS.nodirty: dirtyOne = cleanOne; dirtyNeg = cleanNeg
 
       # run the graph
-      summaries, _, global_step, loss, prec = sess.run(
-        [all_summaries, model.train_op, model.global_step, model.loss, precision],
-        feed_dict={model.lrn_rate: scheduler._lrn_rate, images: batchimages, labels: batchtarget,
+      summaries, _, global_step, loss, pred, prec, xentPerExample = sess.run(
+        [all_summaries, model.train_op, model.global_step, model.loss, model.predictions, precision, model.xentPerExample],
+        feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: batchimages, model.labels: batchtarget,
                    model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
 
-      scheduler.after_run(global_step)
+      # accumulate correct and total scores
+      cleanpred = np.argmax(pred[:len(cleanimages)], axis=1)
+      dirtypred = np.argmax(pred[len(cleanimages):], axis=1)
+      cleantrue = np.argmax(cleantarget, axis=1)
+      dirtytrue = np.argmax(dirtytarget, axis=1)
+      cleancorr += np.sum(cleanpred==cleantrue)
+      dirtycorr += np.sum(dirtypred==dirtytrue)
+      cleantot += len(cleanimages)
+      dirtytot += len(dirtyimages)
+
+      scheduler.after_run(global_step, len(cleanloader))
 
       # save ckpt and summary every 100 iters
       if np.mod(global_step, 100)==0:
+
         summary_writer.add_summary(summaries, global_step)
         summary_writer.flush()
         saver.save(sess, ckpt_file)
         tf.logging.info('TRAIN: loss: %.3f, precision: %.3f, global_step: %d, epoch: %d, time: %s' %
                         (loss, prec, global_step, epoch, timenow()))
+
+      # compute spectral radius every 5000 iters
+      if np.mod(global_step, 5000)==0:
+
+        for i in range(6): # do power iteration to find spectral radius
+          # accumulate gradients over entire batch
+          tstart = time.time()
+          sess.run(model.zero_op)
+          for bid, (batchimages, batchtarget) in enumerate(cleanloader):
+            # change from torch tensor to numpy array
+            batchimages = batchimages.permute(0,2,3,1).numpy()
+            batchtarget = batchtarget.numpy()
+            batchtarget = np.eye(hps.num_classes)[batchtarget]
+            # hack
+            dirtyOne = 0*np.ones_like(batchtarget)
+            dirtyNeg = 1*np.ones_like(batchtarget)
+            # accumulate hvp
+            sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+          # calculated projected hessian eigvec and eigval
+          projvec_op, corr_iter, xHx, nextProjvec = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec])
+          print('TRAIN: power_iter', i, 'xHx', xHx, 'corr_iter', corr_iter, 'elapsed', time.time()-tstart)
+
+        # compute correlation between projvec of different epochs
+        if 'projvec' in locals():
+          corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
+          print('TRAIN: projvec mag', utils.global_norm(projvec), 'nextProjvec mag', utils.global_norm(nextProjvec), 'corr_period', corr_period) # ensure unit magnitude
+          experiment.log_metric('corr_period', corr_period, global_step)
+        projvec = nextProjvec
+
+        experiment.log_metric('xHx', xHx, global_step)
+        experiment.log_metric('corr_iter', corr_iter, global_step)
+
+    # log clean and dirty accuracy over entire batch
+    experiment.log_metric('clean/acc', cleancorr/cleantot, global_step)
+    experiment.log_metric('dirty/acc', dirtycorr/dirtytot, global_step)
+    experiment.log_metric('clean_minus_dirty', cleancorr/cleantot - dirtycorr/dirtytot)
+    print('TRAIN: epoch', epoch, 'finished. clean/acc', cleancorr/cleantot, 'dirty/acc', dirtycorr/dirtytot)
 
       # save initial weights on first iteration
       # if global_step==1:
@@ -246,14 +291,20 @@ def train(hps):
   bestEvalPrecision = metricSummaries['eval/Best Precision']['valueMax']
   print('sigoptObservation='+str(bestEvalPrecision))
 
+  # untested: upload to dropbox
+  print('uploading to dropbox')
+  os.system('dbx upload '+log_dir+' ckpt/')
+
+
 
 def evaluate(hps):
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if FLAGS.cpu_eval else FLAGS.gpu # run eval on cpu
 
-  images, labels = cifar_input.build_input(
-      FLAGS.dataset, FLAGS.eval_data_path, hps.batch_size, FLAGS.mode, FLAGS.augment)
-  model = resnet_model.ResNet(hps, images, labels, FLAGS.mode)
+  # images, labels = cifar_input.build_input(
+  #     FLAGS.dataset, FLAGS.eval_data_path, hps.batch_size, FLAGS.mode, FLAGS.augment)
+  cleanloader, dirtyloader, testloader, trainloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=FLAGS.fracdirty)
+  model = resnet_model.ResNet(hps, FLAGS.mode)
   model.build_graph()
 
   ckpt_file = join(log_dir, 'model.ckpt')
@@ -286,11 +337,15 @@ def evaluate(hps):
 
     # run evaluation session over entire eval set in batches
     total_prediction, correct_prediction = 0, 0
-    eval_batch_count = int(10000/FLAGS.eval_batch_size)
-    for _ in six.moves.range(eval_batch_count):
+    # eval_batch_count = int(10000/FLAGS.eval_batch_size)
+    for batch_idx, (images, target) in enumerate(testloader):
+
+      images = images.permute(0,2,3,1).numpy(); target = target.numpy()
+      target = np.eye(hps.num_classes)[target]
+
       (summaries, predictions, truth, global_step, loss) = sess.run(
-          [model.summaries, model.predictions,
-           model.labels, model.global_step, model.xent])
+          [model.summaries, model.predictions, model.labels, model.global_step, model.xent],
+          {model._images: images, model.labels: target})
 
       truth = np.argmax(truth, axis=1)
       predictions = np.argmax(predictions, axis=1)
@@ -309,8 +364,8 @@ def evaluate(hps):
         tag=FLAGS.mode+'/Best Precision', simple_value=best_precision)
     summary_writer.add_summary(best_precision_summ, global_step)
     summary_writer.add_summary(summaries, global_step)
-    # tf.logging.info('EVAL: loss: %.3f, precision: %.3f, best precision: %.3f time: %s' %
-    #                 (loss, precision, best_precision, timenow()))
+    tf.logging.info('EVAL: loss: %.3f, precision: %.3f, best precision: %.3f time: %s' %
+                    (loss, precision, best_precision, timenow()))
     summary_writer.flush()
 
     time.sleep(60)

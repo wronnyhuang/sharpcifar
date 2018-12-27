@@ -22,7 +22,7 @@ def _spec(net, xent):
   # create initial projection vector (randomly and normalized)
   projvec_init = [np.random.randn(*r.get_shape().as_list()) for r in net.regularizable]
   magnitude = np.sqrt(np.sum([np.sum(p**2) for p in projvec_init]))
-  projvec_init = projvec_init/magnitude
+  projvec_init = [p/magnitude for p in projvec_init]
 
   # projection vector tensor variable
   with tf.variable_scope(xent.op.name+'/projvec'):
@@ -39,22 +39,28 @@ def _spec(net, xent):
     elif net.hps.normalizer == 'layernorm': normalizer = utils.layernorm
     elif net.hps.normalizer == 'layernormdev': normalizer = utils.layernormdev
     norm_values = normalizer(net.regularizable)
-    projvec_normed = [tf.multiply(f,p) for f,p in zip(norm_values, net.projvec)]
+    projvec_normed = [tf.multiply(f,p, name='normed/'+p.op.name) for f,p in zip(norm_values, net.projvec)]
 
-  # get the hessian-vector product
-  tstart = time.time(); net.gradLoss = tf.gradients(xent, net.regularizable); print('Built gradLoss: ' + str(time.time() - tstart) + ' s')
-  tstart = time.time(); net.hessVecProd = tf.gradients(net.gradLoss, net.regularizable, projvec_normed); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
-  # tstart = time.time(); net.hessVecProd = utils.fwd_gradients(net.gradLoss, net.regularizable, projvec_filtnorm); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
+  # get gradient of loss wrt inputs, get the hessian-vector product
+  tstart = time.time(); gradLoss = tf.gradients(xent, net.regularizable); print('Built gradLoss: ' + str(time.time() - tstart) + ' s')
+  tstart = time.time(); hessVecProd = tf.gradients(gradLoss, net.regularizable, projvec_normed); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
+  # tstart = time.time(); hessVecProd = utils.fwd_gradients(gradLoss, net.regularizable, projvec_filtnorm); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
+
+  # create op to accumulate gradients
+  with tf.variable_scope('accum'):
+    hessvecprodAccum = [tf.Variable(tf.zeros_like(h), trainable=False, name=h.op.name) for h in hessVecProd]
+    net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum]
+    net.accum_op = [a.assign_add(g)/50000 for a,g in zip(hessvecprodAccum, hessVecProd)]
 
   # principal eigenvalue: project hessian-vector product with that same vector
-  net.xHx = utils.list2dotprod(net.projvec, net.hessVecProd)
+  net.xHx = utils.list2dotprod(net.projvec, hessvecprodAccum)
   # normProjvec = utils.list2norm(net.projvec)
   # net.xHx = tf.divide(net.xHx, tf.square(normProjvec)) # optional: needed only if not normalized in the projvec update
 
   # next projection vector definition
   # nextProjvec = [tf.add(h, tf.multiply(p, .9)) for h,p in zip(hessVecProd, net.projvec)] # unnormalized update
-  normHv = utils.list2norm(net.hessVecProd)
-  unitHv = [tf.divide(h, normHv) for h in net.hessVecProd]
+  normHv = utils.list2norm(hessvecprodAccum)
+  unitHv = [tf.divide(h, normHv) for h in hessvecprodAccum]
   nextProjvec = [tf.add(h, tf.multiply(p, net.hps.projvec_beta)) for h,p in zip(unitHv, net.projvec)]
   normNextPv = utils.list2norm(nextProjvec)
   nextProjvec = [tf.divide(p, normNextPv) for p in nextProjvec]
@@ -73,6 +79,7 @@ def _spec(net, xent):
   spec_penalty = tf.multiply(net.hps.spec_sign, tf.multiply(net.spec_coef, tf.maximum(net.xHx, 0)))
 
   return spec_penalty
+
 
 def diagnostics(net):
   '''build diagnostic ops for the gradients, weights, etc'''

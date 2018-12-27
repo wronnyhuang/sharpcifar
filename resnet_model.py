@@ -24,6 +24,7 @@ from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
+import tensorflow.keras.backend as K
 import six
 import time
 import specreg
@@ -39,7 +40,7 @@ HParams = namedtuple('HParams',
 class ResNet(object):
   """ResNet model."""
 
-  def __init__(self, hps, images, labels, mode):
+  def __init__(self, hps, mode):
     """ResNet constructor.
 
     Args:
@@ -48,6 +49,8 @@ class ResNet(object):
       labels: Batches of labels. [batch_size, num_classes]
       mode: One of 'train' and 'eval'.
     """
+    images = tf.placeholder(name='input/images', dtype=tf.float32, shape=(None, 32, 32, 3))
+    labels = tf.placeholder(name='input/labels', dtype=tf.float32, shape=(None, hps.num_classes))
     self.hps = hps
     self._images = images
     self.labels = labels
@@ -131,7 +134,9 @@ class ResNet(object):
         self.dirtyOne = tf.placeholder(name='dirtyOne', dtype=tf.float32, shape=[None, 10])
         self.dirtyNeg = tf.placeholder(name='dirtyNeg', dtype=tf.float32, shape=[None, 10])
         self.dirtyPredictions = self.dirtyOne + self.dirtyNeg * self.predictions
-        self.xent = tf.reduce_mean(-tf.reduce_sum(self.labels * tf.log(self.dirtyPredictions), reduction_indices=[1]))
+        self.xentPerExample = K.categorical_crossentropy(self.labels, self.dirtyPredictions)
+        # self.xentPerExample = -tf.reduce_sum(self.labels * tf.log(self.dirtyPredictions), reduction_indices=[1])
+        self.xent = tf.reduce_mean(self.xentPerExample)
 
     elif self.mode=='eval':
       # cross entropy, only for eval
@@ -152,7 +157,10 @@ class ResNet(object):
     # add regularization terms to xent to form loss function
     self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
 
-    # build gradients
+    # add spectral radius calculations
+    specreg._spec(self, tf.reduce_sum(self.xentPerExample))
+
+    # build gradients for training
     trainable_variables = tf.trainable_variables()
     tstart = time.time(); grads = tf.gradients(self.loss, trainable_variables); print('Built grads: '+str(time.time()-tstart))
 
@@ -185,9 +193,9 @@ class ResNet(object):
     self.train_op = tf.group(*train_ops)
 
     tf.summary.scalar(self.mode+'/loss', self.loss)
-    tf.summary.scalar('diag/grad_norm', grad_norm)
-    tf.summary.scalar('hp/learning_rate', self.lrn_rate)
-    # tf.summary.scalar('diag/projvec_corr', self.projvec_corr)
+    tf.summary.scalar('grad_norm', grad_norm)
+    tf.summary.scalar('learning_rate', self.lrn_rate)
+    # tf.summary.scalar('diag/projvec_corr',self.projvec_corr)
     # tf.summary.scalar('diag/xHx', self.xHx)
     # tf.summary.scalar('hp/spec_coef', self.spec_coef)
     # tf.summary.scalar('hp/projvec_beta', self.hps.projvec_beta)

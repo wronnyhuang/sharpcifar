@@ -5,6 +5,23 @@ import glob
 import re
 import warnings
 
+
+def itercycle(sequence):
+  '''return iterable which iterates infinitely by cycling through the sequence'''
+  while True:
+    iterable = iter(sequence)
+    for elem in iterable:
+      yield elem
+
+def global_norm(vec):
+  return np.sqrt(np.sum([np.sum(p**2) for p in vec]))
+
+def unitvec_like(vec):
+  unitvec = [np.random.randn(*v.shape) for v in vec]
+  magnitude = global_norm(unitvec)
+  unitvec = [p/magnitude for p in unitvec]
+  return unitvec
+
 def list2dotprod(listoftensors1, listoftensors2):
   '''compute the dot product of two lists of tensors (such as those returned when you call tf.gradients) as if each
   list were one concatenated tensor'''
