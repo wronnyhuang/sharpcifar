@@ -59,7 +59,7 @@ if FLAGS.scratch: FLAGS.pretrain_url = FLAGS.pretrain_dir = None
 if not os.path.exists(join(log_dir, 'comet_expt_key.txt')):
   # initialize comet experiment
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-                          project_name='sharpcifar-sigopt', workspace="wronnyhuang")
+                          project_name='sharpcifar', workspace="wronnyhuang")
   # write experiment key
   os.makedirs(log_dir, exist_ok=True)
   with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
@@ -183,7 +183,7 @@ def train(hps):
 
     # dirtyloaderiter = iter(dirtyloader)
     cleancorr = dirtycorr = cleantot = dirtytot = 0
-    for (cleanimages, cleantarget), (dirtyimages, dirtytarget) in zip(cleanloader, utils.itercycle(dirtyloader)):
+    for batchid, ((cleanimages, cleantarget), (dirtyimages, dirtytarget)) in enumerate(zip(cleanloader, utils.itercycle(dirtyloader))):
 
       # change from torch tensor to numpy array
       dirtyimages = dirtyimages.permute(0,2,3,1); cleanimages = cleanimages.permute(0,2,3,1)
@@ -233,9 +233,10 @@ def train(hps):
                         (loss, prec, global_step, epoch, timenow()))
 
       # compute spectral radius every 5000 iters
-      if np.mod(global_step, 5000)==0:
+      if np.mod(global_step, 5000)==0 or ( epoch==FLAGS.epoch_end-1 and batchid==0 ):
 
-        for i in range(6): # do power iteration to find spectral radius
+        num_power_iter = 6
+        for power_iter in range(num_power_iter): # do power iteration to find spectral radius
           # accumulate gradients over entire batch
           tstart = time.time()
           sess.run(model.zero_op)
@@ -249,9 +250,12 @@ def train(hps):
             dirtyNeg = 1*np.ones_like(batchtarget)
             # accumulate hvp
             sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+            # get coarse xHx
+            if power_iter==num_power_iter-1 and bid==0:
+              xHx_batch = sess.run(model.xHx, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
           # calculated projected hessian eigvec and eigval
           projvec_op, corr_iter, xHx, nextProjvec = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec])
-          print('TRAIN: power_iter', i, 'xHx', xHx, 'corr_iter', corr_iter, 'elapsed', time.time()-tstart)
+          print('TRAIN: power_iter', power_iter, 'xHx', xHx, 'corr_iter', corr_iter, 'elapsed', time.time()-tstart)
 
         # compute correlation between projvec of different epochs
         if 'projvec' in locals():
@@ -260,6 +264,7 @@ def train(hps):
           experiment.log_metric('corr_period', corr_period, global_step)
         projvec = nextProjvec
 
+        experiment.log_metric('xHx_batch', xHx_batch, global_step)
         experiment.log_metric('xHx', xHx, global_step)
         experiment.log_metric('corr_iter', corr_iter, global_step)
 
@@ -292,8 +297,8 @@ def train(hps):
   print('sigoptObservation='+str(bestEvalPrecision))
 
   # untested: upload to dropbox
-  print('uploading to dropbox')
-  os.system('dbx upload '+log_dir+' ckpt/')
+  # print('uploading to dropbox')
+  # os.system('dbx upload '+log_dir+' ckpt/')
 
 
 

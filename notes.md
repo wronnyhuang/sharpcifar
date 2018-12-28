@@ -25,5 +25,8 @@ Now we will experiment with changing the poisoning fraction for experiments pret
 
 Also experimented with training from scratch
 - `fracdirty=.95` https://www.comet.ml/wronnyhuang/sharpcifar/28aa3e97c88143f0a94b2efdda8fd7a7/chart
-  Surprisingly, although clean examples only take up 6 out of 128 examples per batch, the clean acc is near perfect while dirty performance is close to zero
-  
+  Surprisingly, although clean examples only take up 6 out of 128 examples per batch, the clean acc is perfect while dirty performance is zero, also eval accuracy is about 30%
+- More repeats of this experiment here
+  https://www.comet.ml/wronnyhuang/sharpcifar/7d6adfa1c66d4d6a9e55e20a80626a32
+  https://www.comet.ml/wronnyhuang/sharpcifar/dffa8da21e85456386c178d191b927d4
+- Control experiments with `nodirty` flag on

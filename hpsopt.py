@@ -18,9 +18,10 @@ args = parser.parse_args()
 
 def evaluate_model(assignment, gpu, name):
   assignment = dict(assignment)
-  command = 'python main.py' + \
+  command = 'python resnet_main.py' + \
             ' --gpu=' + str(gpu) + \
             ' --log_root=' + name + ' ' + \
+            ' --pretrain_dir=ckpt/init-nodirty8 ' + \
             ' '.join(['--' + k +'=' + str(v) for k,v in assignment.items()])
   if args.debug: command = command + ' --nepoch=51'
   print(command)
@@ -28,13 +29,13 @@ def evaluate_model(assignment, gpu, name):
 
   # retrieve best evaluation result
   cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
-  exptKey = open('/root/ckpt/sharpmin-spiral/'+name+'/comet_expt_key.txt', 'r').read()
+  exptKey = open('/root/ckpt/'+name+'/comet_expt_key.txt', 'r').read()
   metricSummaries = cometapi.get_raw_metric_summaries(exptKey)
   metricSummaries = {b.pop('name'): b for b in metricSummaries}
   # value = metricSummaries['t/xent']['valueMin'] # xent
-  value = cometapi.get_metrics(exptKey)['gen_gap_t']['value'].iloc[-10:].median() # gen_gap
+  value = cometapi.get_metrics(exptKey)['eval/xent']['value'].iloc[-10:].median() # gen_gap
   value = float(value)
-  # value = 1/value
+  value = 1/value
   value = min(1e10, value)
   print('sigoptObservation=' + str(value))
   return value # optimization metric
@@ -43,7 +44,7 @@ api_key = 'FJUVRFEZUNYVIMTPCJLSGKOSDNSNTFSDITMBVMZRKZRRVREL'
 
 parameters = [
               dict(name='lrn_rate', type='double', default_value=1e-1, bounds=dict(min=.2*1e-1, max=5*1e-1)),
-              dict(name='fracdirty', type='double', default_value=.9, bounds=dict(min=.01, max=.98)),
+              dict(name='fracdirty', type='double', default_value=.9, bounds=dict(min=.01, max=.95)),
               # dict(name='distrfrac', type='double', default_value=.6,  bounds=dict(min=.01, max=1)),
               # dict(name='distrstep', type='int', default_value=9000,  bounds=dict(min=5000, max=15000)),
               # dict(name='distrstep2', type='int', default_value=17000,  bounds=dict(min=15000, max=20000)),
