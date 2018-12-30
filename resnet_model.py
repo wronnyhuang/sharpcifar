@@ -141,9 +141,9 @@ class ResNet(object):
     elif self.mode=='eval':
       # cross entropy, only for eval
       with tf.variable_scope('xent'):
-        xent = tf.nn.softmax_cross_entropy_with_logits(
+        self.xentPerExample = tf.nn.softmax_cross_entropy_with_logits(
             logits=logits, labels=self.labels)
-        self.xent = tf.reduce_mean(xent)
+        self.xent = tf.reduce_mean(self.xentPerExample)
 
     # self.xentPerExample = xent # todo oct16 added
     tf.summary.scalar(self.mode+'/xent', self.xent)

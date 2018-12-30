@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from numpy.linalg import norm
 import os
 import glob
 import re
@@ -16,11 +17,15 @@ def itercycle(sequence):
 def global_norm(vec):
   return np.sqrt(np.sum([np.sum(p**2) for p in vec]))
 
-def unitvec_like(vec):
+def global_unitvec_like(vec):
   unitvec = [np.random.randn(*v.shape) for v in vec]
   magnitude = global_norm(unitvec)
   unitvec = [p/magnitude for p in unitvec]
   return unitvec
+
+def unitvec_like(vec):
+  unitvec = np.random.randn(*vec.shape)
+  return unitvec / norm(unitvec.ravel())
 
 def list2dotprod(listoftensors1, listoftensors2):
   '''compute the dot product of two lists of tensors (such as those returned when you call tf.gradients) as if each

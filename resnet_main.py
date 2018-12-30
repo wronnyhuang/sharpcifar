@@ -8,6 +8,20 @@ import os
 from os.path import join
 import argparse
 from cometml_api import api as cometapi
+import time
+from datetime import datetime
+import six
+import numpy as np
+import cifar_input
+import resnet_model
+import utils
+import sys
+from cifar_loader_torch import cifar_loader
+from resnet_evaluator import Evaluator
+import subprocess
+from subprocess import PIPE, STDOUT
+from glob import glob
+from del_old_ckpt import _del_old_ckpt
 parser = argparse.ArgumentParser()
 # file names
 parser.add_argument('--log_root', default='debug7', type=str, help='Directory to keep the checkpoints.')
@@ -70,33 +84,10 @@ else:
     comet_key = f.read()
   # iniitalize comet experiment
   experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
-# set name of experiment and write experiment key into log directory
-experiment.set_name(FLAGS.log_root)
-experiment.log_multiple_params(vars(FLAGS))
 
-# import the other packages
-import time
-from datetime import datetime
-import six
-import numpy as np
+# import the other packages and get variables used in multiple functions
 import tensorflow as tf
-import cifar_input
-import resnet_model
-import utils
-import sys
-from cifar_loader_torch import cifar_loader
-import subprocess
-from subprocess import PIPE, STDOUT
-from glob import glob
-from del_old_ckpt import _del_old_ckpt
-gpu_options = tf.GPUOptions(allow_growth=True)
 timenow = lambda: datetime.now().strftime('%m-%d %H:%M:%S')
-hostname = open('/root/misc/hostname.log').read()
-print('====================> HOST: docker @ '+hostname)
-experiment.log_other('hostmachine', hostname)
-
-# FLAGS = utils.debug_settings(FLAGS)
-if FLAGS.mode == 'train': open('/root/resnet_main.bash','w').write('cd /root/repo/hessreg && python '+' '.join(sys.argv)) # write command to the log
 
 def train(hps):
 
@@ -165,7 +156,7 @@ def train(hps):
 
   # initialize session, queuerunner
   print('===================> TRAIN: STARTING SESSION at '+timenow())
-  sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options))
+  sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, gpu_options=tf.GPUOptions(allow_growth=True)))
   print('===================> TRAIN: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
   tf.train.start_queue_runners(sess)
   scheduler = Scheduler()
@@ -302,80 +293,53 @@ def train(hps):
 
 
 
-def evaluate(hps):
+def evaluate(hps, return_evaluator=False):
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if FLAGS.cpu_eval else FLAGS.gpu # run eval on cpu
-
-  # images, labels = cifar_input.build_input(
-  #     FLAGS.dataset, FLAGS.eval_data_path, hps.batch_size, FLAGS.mode, FLAGS.augment)
-  cleanloader, dirtyloader, testloader, trainloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=FLAGS.fracdirty)
-  model = resnet_model.ResNet(hps, FLAGS.mode)
-  model.build_graph()
-
-  ckpt_file = join(log_dir, 'model.ckpt')
-  saver = tf.train.Saver(max_to_keep=1)
-  summary_writer = tf.summary.FileWriter(FLAGS.eval_dir)
+  _, _, testloader, _ = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=FLAGS.fracdirty)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
-  sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, gpu_options=gpu_options))
+  evaluator = Evaluator(testloader, hps)
   print('===================> EVAL: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
-  tf.train.start_queue_runners(sess)
 
   # continuously evaluate until process is killed
   best_precision = 0.0
   while True:
 
-    _del_old_ckpt(log_dir) # keep only newest ckpt
+    # restore weights from file
+    restoreError = evaluator.restore_weights(log_dir)
+    if restoreError: continue
 
-    # load checkpoint
-    try:
-      ckpt_state = tf.train.get_checkpoint_state(log_dir)
-    except tf.errors.OutOfRangeError as e:
-      tf.logging.error('EVAL: Cannot restore checkpoint: %s', e)
-      continue
-    if not (ckpt_state and ckpt_state.model_checkpoint_path):
-      tf.logging.info('EVAL: No model to eval yet at %s', log_dir)
-      time.sleep(10)
-      continue
-    # tf.logging.info('EVAL: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
-    saver.restore(sess, ckpt_file)
+    # KEY LINE OF CODE
+    xent, precision, global_step = evaluator.eval()
 
-    # run evaluation session over entire eval set in batches
-    total_prediction, correct_prediction = 0, 0
-    # eval_batch_count = int(10000/FLAGS.eval_batch_size)
-    for batch_idx, (images, target) in enumerate(testloader):
-
-      images = images.permute(0,2,3,1).numpy(); target = target.numpy()
-      target = np.eye(hps.num_classes)[target]
-
-      (summaries, predictions, truth, global_step, loss) = sess.run(
-          [model.summaries, model.predictions, model.labels, model.global_step, model.xent],
-          {model._images: images, model.labels: target})
-
-      truth = np.argmax(truth, axis=1)
-      predictions = np.argmax(predictions, axis=1)
-      correct_prediction += np.sum(truth == predictions)
-      total_prediction += predictions.shape[0]
-
-    precision = 1.0 * correct_prediction / total_prediction
     best_precision = max(precision, best_precision)
-
     precision_summ = tf.Summary()
     precision_summ.value.add(
         tag=FLAGS.mode+'/Precision', simple_value=precision)
+    summary_writer = tf.summary.FileWriter(FLAGS.eval_dir)
     summary_writer.add_summary(precision_summ, global_step)
     best_precision_summ = tf.Summary()
     best_precision_summ.value.add(
         tag=FLAGS.mode+'/Best Precision', simple_value=best_precision)
     summary_writer.add_summary(best_precision_summ, global_step)
-    summary_writer.add_summary(summaries, global_step)
+    experiment.log_metric('eval/xent', xent, global_step)
     tf.logging.info('EVAL: loss: %.3f, precision: %.3f, best precision: %.3f time: %s' %
-                    (loss, precision, best_precision, timenow()))
+                    (xent, precision, best_precision, timenow()))
     summary_writer.flush()
 
-    time.sleep(60)
+    # time.sleep(60)
+
 
 def main(_):
+
+  # set name of experiment and write experiment key into log directory
+  experiment.set_name(FLAGS.log_root)
+  experiment.log_multiple_params(vars(FLAGS))
+
+  hostname = open('/root/misc/hostname.log').read()
+  print('====================> HOST: docker @ '+hostname)
+  experiment.log_other('hostmachine', hostname)
 
   # put train and eval run logs in the log directory
   FLAGS.train_dir = join(log_dir, 'train')
@@ -409,12 +373,10 @@ def main(_):
                              spec_sign=FLAGS.spec_sign,
                              optimizer='mom')
 
-  # with tf.device(dev):
   if FLAGS.mode == 'train':
     train(hps)
   elif FLAGS.mode == 'eval':
     evaluate(hps)
-
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)

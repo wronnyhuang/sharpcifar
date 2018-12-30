@@ -4,6 +4,8 @@ import torchvision.transforms as transforms
 import torch.utils.data as data
 import os
 
+torch.manual_seed(1234)
+
 def cifar_loader(data_root, batchsize, fracdirty):
   '''return loaders for cifar'''
 
