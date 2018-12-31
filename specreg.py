@@ -41,9 +41,14 @@ def _spec(net, xent):
     norm_values = normalizer(net.regularizable)
     projvec_normed = [tf.multiply(f,p, name='normed/'+p.op.name) for f,p in zip(norm_values, net.projvec)]
 
-  # get gradient of loss wrt inputs, get the hessian-vector product
+  # get gradient of loss wrt inputs
   tstart = time.time(); gradLoss = tf.gradients(xent, net.regularizable); print('Built gradLoss: ' + str(time.time() - tstart) + ' s')
-  tstart = time.time(); hessVecProd = tf.gradients(gradLoss, net.regularizable, projvec_normed); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
+
+  # get hessian vector product
+  tstart = time.time();
+  hessVecProd = tf.gradients(gradLoss, net.regularizable, projvec_normed)
+  hessVecProd = [h*n for h,n in zip(hessVecProd, norm_values)]
+  print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
   # tstart = time.time(); hessVecProd = utils.fwd_gradients(gradLoss, net.regularizable, projvec_filtnorm); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
 
   # create op to accumulate gradients

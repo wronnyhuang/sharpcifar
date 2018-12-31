@@ -1,10 +1,12 @@
 import tensorflow as tf
+from datetime import datetime
 import numpy as np
 from numpy.linalg import norm
 import os
 import glob
 import re
 import warnings
+import time
 
 
 def itercycle(sequence):
@@ -54,18 +56,21 @@ def filtnorm(trainable_variables):
   with tf.variable_scope('filtnorm'):
     filtnorm = []
     for r in trainable_variables: # iterate by layer
-      if r.shape==4:  # conv layer
+      if len(r.shape)==4:  # conv layer
         f = []
         for i in range(r.shape[-1]):
           f.append(tf.multiply(tf.ones_like(r[:,:,:,i]), tf.norm(r[:,:,:,i])))
         filtnorm.append(tf.stack(f,axis=3))
-      elif r.shape==2: # fully connected layer
+      elif len(r.shape)==2: # fully connected layer
         f = []
         for i in range(r.shape[-1]):
           f.append(tf.multiply(tf.ones_like(r[:,i]), tf.norm(r[:,i])))
-      else: # bn and bias layer
+        filtnorm.append(tf.stack(f,axis=1))
+      elif len(r.shape)==1: # bn and bias layer
         f = tf.multiply(tf.ones_like(r), tf.norm(r))
         filtnorm.append(f)
+      else:
+        print('invalid number of dimensions in layer, should be 1, 2, or 4')
   return filtnorm
 
 def layernormdev(trainable_variables):
@@ -82,6 +87,35 @@ def filtnormbyN(trainable_variables):
   norm_values = filtnorm(trainable_variables)
   filtcnt = [tf.size(f) for f in norm_values]
   return [tf.divide(f, tf.cast(c, dtype=tf.float32)) for c,f in zip(filtcnt, norm_values)]
+
+
+def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, num_power_iter=6):
+  '''compute fullbatch hessian eigenvalue/eigenvector given an image loader and model'''
+
+  for power_iter in range(num_power_iter): # do power iteration to find spectral radius
+    # accumulate gradients over entire batch
+    tstart = time.time()
+    sess.run(model.zero_op)
+    for bid, (batchimages, batchtarget) in enumerate(loader):
+
+      # change from torch tensor to numpy array
+      batchimages = batchimages.permute(0,2,3,1).numpy()
+      batchtarget = batchtarget.numpy()
+      batchtarget = np.eye(num_classes)[batchtarget]
+
+      # accumulate hvp
+      if is_training:
+        dirtyOne = 0*np.ones_like(batchtarget)
+        dirtyNeg = 1*np.ones_like(batchtarget)
+        sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+      else:
+        sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget})
+
+    # calculated projected hessian eigvec and eigval
+    projvec_op, projvec_corr, xHx, projvec = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec])
+    print('HESSIAN: power_iter', power_iter, 'xHx', xHx, 'projvec_corr', projvec_corr, 'elapsed', time.time()-tstart)
+
+  return xHx, projvec, projvec_corr
 
 def fwd_gradients(ys, xs, d_xs=None):
   """Forward-mode pushforward analogous to the pullback defined by tf.gradients.
@@ -165,3 +199,31 @@ def debug_settings(FLAGS):
   FLAGS.epoch_end = 1
   FLAGS.pretrain_url = None
   return FLAGS
+
+class Scheduler(object):
+  """Sets learning_rate based on global step."""
+  def __init__(self, args):
+    self._lrn_rate = 0
+    self._spec_coef = args.spec_coef_init
+    self.args = args
+  def after_run(self, global_step, steps_per_epoch):
+    # warmup of spectral coefficient
+    num_full_batch = 50000.
+    num_warmup_epochs = self.args.num_warmup_epochs
+    num_warmup_steps = num_warmup_epochs*num_full_batch/self.args.batch_size
+    self._spec_coef = (self.args.spec_coef-self.args.spec_coef_init)*1/(1 + np.exp(-(global_step - self.args.spec_step_init) / (num_warmup_steps / 12))) \
+                      + self.args.spec_coef_init
+    # warmup of learning rate
+    # self._lrn_rate  = self.args.lrn_rate*np.minimum(np.maximum((train_step-400000)/num_warmup_steps, 0), 1)
+    epoch = float(global_step)/steps_per_epoch
+    if epoch < 102.4:
+      self._lrn_rate = self.args.lrn_rate
+    elif epoch < 153.6:
+      self._lrn_rate = self.args.lrn_rate*0.1
+    elif epoch < 204.8:
+      self._lrn_rate = self.args.lrn_rate*0.01
+    else:
+      self._lrn_rate = self.args.lrn_rate*0.001
+
+def timenow():
+  return datetime.now().strftime('%m-%d %H:%M:%S')

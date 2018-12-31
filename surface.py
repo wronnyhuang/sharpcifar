@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from resnet_evaluator import Evaluator
 from cifar_loader_torch import cifar_loader
-from utils import unitvec_like, global_norm, filtnorm
+from utils import unitvec_like, global_norm
 from functools import reduce
 from numpy.linalg import norm
 import matplotlib.pyplot as plt
@@ -39,17 +39,19 @@ def get_random_dir(weights):
   # create random direction vectors in weight space
 
   randdir = []
-  for l, layer in enumerate(weights):
+  filtnorms = evaluator.get_filtnorm(weights)
+  for l, (layer, layerF) in enumerate(zip(weights, filtnorms)):
 
     # handle nonconvolutional layers
-    if len(layer.shape)==2: layer = layer[None,None,:,:]
+    if len(layer.shape)==2: layer = layer[None,None,:,:]; layerF = layerF[None,None,:,:]
     elif len(layer.shape)!=4: randdir = randdir + [np.zeros(layer.shape)]; continue
 
     # permute so filter index is first
     layer = layer.transpose(3,0,1,2)
+    layerF = layerF.transpose(3,0,1,2)
 
     # make randdir filters that has same norm as the corresponding filter in the weights
-    layerR = np.array([ unitvec_like(filter)*norm(filter.ravel()) for filter in layer ])
+    layerR = np.array([ unitvec_like(filter)*filtnorm for (filter, filtnorm) in zip(layer, layerF) ])
 
     # permute back to standard
     layerR = layerR.transpose(1,2,3,0)
@@ -61,7 +63,9 @@ def get_random_dir(weights):
 dw1 = get_random_dir(weights)
 dw2 = get_random_dir(weights)
 
-cfeed = .5 * np.linspace(-1, 1, 40)
+eigval, dw1, projvec_corr = evaluator.get_hessian()
+
+cfeed = .5 * np.linspace(-1, 1, 5)
 
 xent = np.zeros(len(cfeed))
 for i, c in enumerate(cfeed):

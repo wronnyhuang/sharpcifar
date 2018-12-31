@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import resnet_model
 from os.path import join, basename, dirname
+import utils
 
 class Evaluator(object):
 
@@ -20,7 +21,7 @@ class Evaluator(object):
                                       relu_leakiness=0.1,
                                       projvec_beta=0.0,
                                       max_grad_norm=30,
-                                      normalizer='layernormdev',
+                                      normalizer='filtnorm',
                                       specreg_bn=False,
                                       spec_sign=1,
                                       optimizer='mom')
@@ -88,33 +89,13 @@ class Evaluator(object):
     xent = running_xent/running_tot
     return xent, precision, global_step
 
-  def get_sharpest_dir(self):
+  def get_filtnorm(self, weights):
+    return self.sess.run(utils.filtnorm(weights))
 
-    num_power_iter = 10
-    for power_iter in range(num_power_iter): # do power iteration to find spectral radius
-      # accumulate gradients over entire batch
-      tstart = time.time()
-      sess.run(model.zero_op)
-      for bid, (batchimages, batchtarget) in enumerate(cleanloader):
-        # change from torch tensor to numpy array
-        batchimages = batchimages.permute(0,2,3,1).numpy()
-        batchtarget = batchtarget.numpy()
-        batchtarget = np.eye(hps.num_classes)[batchtarget]
-        # hack
-        dirtyOne = 0*np.ones_like(batchtarget)
-        dirtyNeg = 1*np.ones_like(batchtarget)
-        # accumulate hvp
-        sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
-        # get coarse xHx
-        if power_iter==num_power_iter-1 and bid==0:
-          xHx_batch = sess.run(model.xHx, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
-      # calculated projected hessian eigvec and eigval
-      projvec_op, corr_iter, xHx, nextProjvec = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec])
-      print('TRAIN: power_iter', power_iter, 'xHx', xHx, 'corr_iter', corr_iter, 'elapsed', time.time()-tstart)
+  def get_hessian(self, loader=None):
+    if loader==None: loader = self.loader
+    return utils.hessian_fullbatch(self.sess, self.model, loader, self,hps.num_classes, is_training=False)
 
-    # compute correlation between projvec of different epochs
-    if 'projvec' in locals():
-      corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
-      print('TRAIN: projvec mag', utils.global_norm(projvec), 'nextProjvec mag', utils.global_norm(nextProjvec), 'corr_period', corr_period) # ensure unit magnitude
-      experiment.log_metric('corr_period', corr_period, global_step)
-    projvec = nextProjvec
+
+
+
