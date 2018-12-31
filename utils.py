@@ -54,12 +54,16 @@ def filtnorm(trainable_variables):
   with tf.variable_scope('filtnorm'):
     filtnorm = []
     for r in trainable_variables: # iterate by layer
-      if 'conv' in r.op.name:  # normalize conv filters
+      if r.shape==4:  # conv layer
         f = []
-        for i in range(r.shape[3]):
-          f.append(tf.multiply(tf.ones_like(r[:,:,:,i]),tf.norm(r[:,:,:,i])))
+        for i in range(r.shape[-1]):
+          f.append(tf.multiply(tf.ones_like(r[:,:,:,i]), tf.norm(r[:,:,:,i])))
         filtnorm.append(tf.stack(f,axis=3))
-      else: # norm of bn and bias layers
+      elif r.shape==2: # fully connected layer
+        f = []
+        for i in range(r.shape[-1]):
+          f.append(tf.multiply(tf.ones_like(r[:,i]), tf.norm(r[:,i])))
+      else: # bn and bias layer
         f = tf.multiply(tf.ones_like(r), tf.norm(r))
         filtnorm.append(f)
   return filtnorm

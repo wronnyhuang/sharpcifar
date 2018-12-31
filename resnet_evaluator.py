@@ -8,7 +8,7 @@ class Evaluator(object):
   def __init__(self, loader, hps=None):
 
     if hps == None:
-      self.hps = resnet_model.HParams(batch_size=256,
+      self.hps = resnet_model.HParams(batch_size=None,
                                       num_classes=10,
                                       min_lrn_rate=0.0001,
                                       lrn_rate=0.1,
@@ -81,7 +81,40 @@ class Evaluator(object):
       predictions = np.argmax(predictions, axis=1)
       correct_prediction += np.sum(truth == predictions)
       total_prediction += predictions.shape[0]
+      # premature abortion
+      # if batch_idx > len(self.loader)/4: break
     # aggregate scores
     precision = 1.0 * correct_prediction / total_prediction
     xent = running_xent/running_tot
     return xent, precision, global_step
+
+  def get_sharpest_dir(self):
+
+    num_power_iter = 10
+    for power_iter in range(num_power_iter): # do power iteration to find spectral radius
+      # accumulate gradients over entire batch
+      tstart = time.time()
+      sess.run(model.zero_op)
+      for bid, (batchimages, batchtarget) in enumerate(cleanloader):
+        # change from torch tensor to numpy array
+        batchimages = batchimages.permute(0,2,3,1).numpy()
+        batchtarget = batchtarget.numpy()
+        batchtarget = np.eye(hps.num_classes)[batchtarget]
+        # hack
+        dirtyOne = 0*np.ones_like(batchtarget)
+        dirtyNeg = 1*np.ones_like(batchtarget)
+        # accumulate hvp
+        sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+        # get coarse xHx
+        if power_iter==num_power_iter-1 and bid==0:
+          xHx_batch = sess.run(model.xHx, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+      # calculated projected hessian eigvec and eigval
+      projvec_op, corr_iter, xHx, nextProjvec = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec])
+      print('TRAIN: power_iter', power_iter, 'xHx', xHx, 'corr_iter', corr_iter, 'elapsed', time.time()-tstart)
+
+    # compute correlation between projvec of different epochs
+    if 'projvec' in locals():
+      corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
+      print('TRAIN: projvec mag', utils.global_norm(projvec), 'nextProjvec mag', utils.global_norm(nextProjvec), 'corr_period', corr_period) # ensure unit magnitude
+      experiment.log_metric('corr_period', corr_period, global_step)
+    projvec = nextProjvec
