@@ -93,17 +93,8 @@ def train(hps):
   # set gpu
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-  # load pretrained model from dropbox
-  if args.pretrain_dir:
-    args.pretrain_url = utils.get_dropbox_url(args.pretrain_dir, bin_path=args.bin_path)
-
-  # download pretrained model if a download url was specified
-  print(args.pretrain_url)
-  utils.maybe_download(source_url=args.pretrain_url,
-                       filename=log_dir,
-                       target_directory=None,
-                       filetype='folder',
-                       force=True)
+  # load pretrained model
+  utils.load_pretrained(log_dir, pretrain_dir=args.pretrain_dir)
 
   # build graph [new version]
   cleanloader, dirtyloader, testloader, trainloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
@@ -128,11 +119,11 @@ def train(hps):
   # load checkpoint
   ckpt_state = tf.train.get_checkpoint_state(log_dir)
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
-    tf.logging.info('TRAIN: No pretrained model. Initializing from random')
+    print('TRAIN: No pretrained model. Initializing from random')
     sess.run(tf.global_variables_initializer())
   else:
     saver.restore(sess, ckpt_file)
-    tf.logging.info('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
+    print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
 
   for epoch in range(args.epoch_end): # loop over epochs
 
@@ -175,22 +166,19 @@ def train(hps):
 
       scheduler.after_run(global_step, len(cleanloader))
 
-      # save ckpt and summary every 100 iters
-      if np.mod(global_step, 100)==0:
-
+      if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
         summary_writer.add_summary(summaries, global_step)
         summary_writer.flush()
-        saver.save(sess, ckpt_file)
-        tf.logging.info('TRAIN: loss: %.3f, precision: %.3f, global_step: %d, epoch: %d, time: %s' %
+        print('TRAIN: loss: %.3f, precision: %.3f, global_step: %d, epoch: %d, time: %s' %
                         (loss, prec, global_step, epoch, timenow()))
+        saver.save(sess, ckpt_file)
 
-      # compute spectral radius every 5000 iters
-      if (np.mod(global_step, 1e9)==0 and global_step!=0) or (epoch == args.epoch_end - 1 and batchid == 0):
-        xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True)
+      if np.mod(epoch+1, args.epoch_end) == 0: # compute hessian
+        xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True, num_power_iter=10)
         # compute correlation between projvec of different epochs
         if 'projvec' in locals():
           corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
-          print('TRAIN: projvec mag', utils.global_norm(projvec), 'nextProjvec mag', utils.global_norm(nextProjvec), 'corr_period', corr_period) # ensure unit magnitude
+          print('HESSIAN: projvec mag', utils.global_norm(projvec), 'nextProjvec mag', utils.global_norm(nextProjvec), 'corr_period', corr_period) # ensure unit magnitude
           experiment.log_metric('corr_period', corr_period, global_step)
         projvec = nextProjvec
         # log hessian results
@@ -219,13 +207,13 @@ def train(hps):
 
 
 
-def evaluate(hps, return_evaluator=False):
+def evaluate(hps):
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if args.cpu_eval else args.gpu # run eval on cpu
-  _, _, testloader, _ = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
+  cleanloader, _, testloader, _ = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
-  evaluator = Evaluator(testloader, hps)
+  evaluator = Evaluator(cleanloader, hps)
   print('===================> EVAL: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
 
   # continuously evaluate until process is killed
@@ -250,18 +238,14 @@ def evaluate(hps, return_evaluator=False):
         tag=args.mode + '/Best Precision', simple_value=best_precision)
     summary_writer.add_summary(best_precision_summ, global_step)
     experiment.log_metric('eval/xent', xent, global_step)
-    tf.logging.info('EVAL: loss: %.3f, precision: %.3f, best precision: %.3f time: %s' %
+    print('EVAL: loss: %.3f, precision: %.3f, best precision: %.3f time: %s' %
                     (xent, precision, best_precision, timenow()))
     summary_writer.flush()
 
-    # time.sleep(60)
+    time.sleep(60)
 
-
-# def main(_):
 
 if __name__ == '__main__':
-  tf.logging.set_verbosity(tf.logging.INFO)
-  # tf.app.run()
 
   # set name of experiment and write experiment key into log directory
   experiment.set_name(args.log_root)
@@ -308,6 +292,7 @@ if __name__ == '__main__':
       train(hps)
     finally:
       os.system(join(args.bin_path, 'rek') + ' "mode=eval.*log_root=' + args.log_root + '"') # kill evaluation processes
+      print('killed evaluaton')
 
   elif args.mode == 'eval':
     evaluate(hps)

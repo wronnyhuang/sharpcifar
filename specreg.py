@@ -2,22 +2,22 @@ import tensorflow as tf
 import numpy as np
 import utils
 import time
+np.random.seed(1234)
 
 def _spec(net, xent):
   """returns principal eig of the hessian"""
 
   # decide weights from which to compute the spectral radius
+  print('Number of trainable weights: ' + str(utils.count_params(tf.trainable_variables())))
   if not net.hps.specreg_bn: # don't include batch norm weights
     net.regularizable = []
     for var in tf.trainable_variables():
       if var.op.name.find(r'DW') > 0:
         net.regularizable.append(var)
-  else: net.regularizable = tf.trainable_variables() # do include bn weights
-
-  # count number of trainable and regularizable parameters
-  print('Number of trainable weights: ' + str(utils.count_params(tf.trainable_variables())))
-  print('Number of regularizable weights: ' + str(utils.count_params(net.regularizable)))
-  # print('Number of filtnorm elements: ' + str(utils.count_params(net.filtnorm)))
+    print('Number of regularizable weights: ' + str(utils.count_params(net.regularizable)))
+  else:
+    net.regularizable = tf.trainable_variables() # do include bn weights
+    print('Still zeroing out bias and bn variables in hessian calculation')
 
   # create initial projection vector (randomly and normalized)
   projvec_init = [np.random.randn(*r.get_shape().as_list()) for r in net.regularizable]
@@ -33,21 +33,21 @@ def _spec(net, xent):
   # compute filter normalization
   print('normalization scheme: '+net.hps.normalizer)
   if net.hps.normalizer == None or net.hps.normalizer=='None':
-    projvec_normed = net.projvec
+    projvec_mul_normvalues = net.projvec
   else:
     if net.hps.normalizer == 'filtnorm': normalizer = utils.filtnorm
     elif net.hps.normalizer == 'layernorm': normalizer = utils.layernorm
     elif net.hps.normalizer == 'layernormdev': normalizer = utils.layernormdev
-    norm_values = normalizer(net.regularizable)
-    projvec_normed = [tf.multiply(f,p, name='normed/'+p.op.name) for f,p in zip(norm_values, net.projvec)]
+    net.normvalues = normalizer(net.regularizable)
+    projvec_mul_normvalues = [n*p for n,p in zip(net.normvalues, net.projvec)]
 
   # get gradient of loss wrt inputs
   tstart = time.time(); gradLoss = tf.gradients(xent, net.regularizable); print('Built gradLoss: ' + str(time.time() - tstart) + ' s')
 
   # get hessian vector product
-  tstart = time.time();
-  hessVecProd = tf.gradients(gradLoss, net.regularizable, projvec_normed)
-  hessVecProd = [h*n for h,n in zip(hessVecProd, norm_values)]
+  tstart = time.time()
+  hessVecProd = tf.gradients(gradLoss, net.regularizable, projvec_mul_normvalues)
+  hessVecProd = [h*n for h,n in zip(hessVecProd, net.normvalues)]
   print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
   # tstart = time.time(); hessVecProd = utils.fwd_gradients(gradLoss, net.regularizable, projvec_filtnorm); print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
 
@@ -55,7 +55,7 @@ def _spec(net, xent):
   with tf.variable_scope('accum'):
     hessvecprodAccum = [tf.Variable(tf.zeros_like(h), trainable=False, name=h.op.name) for h in hessVecProd]
     net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum]
-    net.accum_op = [a.assign_add(g)/50000 for a,g in zip(hessvecprodAccum, hessVecProd)]
+    net.accum_op = [a.assign_add(g/50000) for a,g in zip(hessvecprodAccum, hessVecProd)]
 
   # principal eigenvalue: project hessian-vector product with that same vector
   net.xHx = utils.list2dotprod(net.projvec, hessvecprodAccum)
@@ -75,13 +75,13 @@ def _spec(net, xent):
   net.projvec_dist = utils.list2euclidean(nextProjvec, net.projvec)
 
   # op to assign the new projection vector for next iteration
-  with tf.control_dependencies([net.projvec_corr, net.projvec_dist]):
+  with tf.control_dependencies([net.projvec_corr, net.projvec_dist, net.xHx]):
     with tf.variable_scope('projvec_op'):
       net.projvec_op = [tf.assign(p,n) for p,n in zip(net.projvec, nextProjvec)]
 
   # spectral penalty: multiply by spectral radius coefficient and return
   net.spec_coef = tf.constant(0, tf.float32)
-  spec_penalty = tf.multiply(net.hps.spec_sign, tf.multiply(net.spec_coef, tf.maximum(net.xHx, 0)))
+  spec_penalty = tf.multiply(net.hps.spec_sign, tf.multiply(net.spec_coef, tf.maximum(net.xHx, 0.0)))
 
   return spec_penalty
 

@@ -135,7 +135,6 @@ class ResNet(object):
         self.dirtyNeg = tf.placeholder(name='dirtyNeg', dtype=tf.float32, shape=[None, 10])
         self.dirtyPredictions = self.dirtyOne + self.dirtyNeg * self.predictions
         self.xentPerExample = K.categorical_crossentropy(self.labels, self.dirtyPredictions)
-        # self.xentPerExample = -tf.reduce_sum(self.labels * tf.log(self.dirtyPredictions), reduction_indices=[1])
         self.xent = tf.reduce_mean(self.xentPerExample)
 
     elif self.mode=='eval':
@@ -148,6 +147,10 @@ class ResNet(object):
     # self.xentPerExample = xent # todo oct16 added
     tf.summary.scalar(self.mode+'/xent', self.xent)
 
+    # add spectral radius calculations
+    specreg._spec(self, tf.reduce_sum(self.xentPerExample))
+
+
   def _build_train_op(self):
     """Build training specific ops for the graph."""
 
@@ -156,9 +159,6 @@ class ResNet(object):
 
     # add regularization terms to xent to form loss function
     self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
-
-    # add spectral radius calculations
-    specreg._spec(self, tf.reduce_sum(self.xentPerExample))
 
     # build gradients for training
     trainable_variables = tf.trainable_variables()

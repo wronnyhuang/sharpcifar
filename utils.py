@@ -67,7 +67,8 @@ def filtnorm(trainable_variables):
           f.append(tf.multiply(tf.ones_like(r[:,i]), tf.norm(r[:,i])))
         filtnorm.append(tf.stack(f,axis=1))
       elif len(r.shape)==1: # bn and bias layer
-        f = tf.multiply(tf.ones_like(r), tf.norm(r))
+        # f = tf.multiply(tf.ones_like(r), tf.norm(r)) # do not do any normalization/scaling to bias/bn variables
+        f = tf.multiply(tf.zeros_like(r), tf.norm(r)) # zero out bias/bn variables so their curvature doesnt affect hessian
         filtnorm.append(f)
       else:
         print('invalid number of dimensions in layer, should be 1, 2, or 4')
@@ -89,7 +90,7 @@ def filtnormbyN(trainable_variables):
   return [tf.divide(f, tf.cast(c, dtype=tf.float32)) for c,f in zip(filtcnt, norm_values)]
 
 
-def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, num_power_iter=6):
+def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, num_power_iter=20):
   '''compute fullbatch hessian eigenvalue/eigenvector given an image loader and model'''
 
   for power_iter in range(num_power_iter): # do power iteration to find spectral radius
@@ -111,9 +112,11 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, nu
       else:
         sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget})
 
+      if power_iter==0 and bid==0: print('Starting hessian calculation, just did first batch of first power iteration')
+
     # calculated projected hessian eigvec and eigval
-    projvec_op, projvec_corr, xHx, projvec = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec])
-    print('HESSIAN: power_iter', power_iter, 'xHx', xHx, 'projvec_corr', projvec_corr, 'elapsed', time.time()-tstart)
+    projvec_op, projvec_corr, xHx, projvec, normvalues = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec, model.normvalues])
+    print('HESSIAN: power_iter', power_iter, 'xHx', xHx, 'projvec_corr', projvec_corr, 'projvec_magnitude', global_norm(projvec), 'elapsed', time.time()-tstart)
 
   return xHx, projvec, projvec_corr
 
@@ -227,3 +230,18 @@ class Scheduler(object):
 
 def timenow():
   return datetime.now().strftime('%m-%d %H:%M:%S')
+
+# load pretrained model from dropbox
+def load_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=''):
+
+  if pretrain_dir:
+    pretrain_url = get_dropbox_url(pretrain_dir, bin_path=bin_path)
+
+  # download pretrained model if a download url was specified
+  print(pretrain_url)
+  maybe_download(source_url=pretrain_url,
+                 filename=log_dir,
+                 target_directory=None,
+                 filetype='folder',
+                 force=True)
+

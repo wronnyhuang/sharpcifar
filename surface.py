@@ -20,65 +20,31 @@ else:
   comet_key = open('comet_expt_key.txt', 'r').read()
   experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
 
-
 np.random.seed(1239)
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 cleanloader, _, _, _ = cifar_loader('/root/datasets', batchsize=2*512, fracdirty=.5)
 evaluator = Evaluator(cleanloader)
-evaluator.restore_weights('/root/ckpt/poison-strong')
+evaluator.restore_weights_dropbox('ckpt/poison-filtnorm-weaker')
+evaluator.eval()
 weights = evaluator.get_weights()
 
-# # do some statistics on weights and plot histogram
-# weightsPermuted = [w.transpose(3,0,1,2) if len(w.shape)>2 else w[None,None,:,:].transpose(3,0,1,2) if len(w.shape)==2 else w for w in weights]
-# filter2norm = lambda filters: [np.linalg.norm(f.ravel()) for f in filters]
-# filternorms = [filter2norm(filters) if len(filters.shape) > 1 else None for filters in weightsPermuted]
-# filternorms = reduce(lambda running_norms, norms: running_norms + norms if norms != None else running_norms, filternorms)
-# hist(filternorms, 20); show()
-
-def get_random_dir(weights):
-  # create random direction vectors in weight space
-
-  randdir = []
-  filtnorms = evaluator.get_filtnorm(weights)
-  for l, (layer, layerF) in enumerate(zip(weights, filtnorms)):
-
-    # handle nonconvolutional layers
-    if len(layer.shape)==2: layer = layer[None,None,:,:]; layerF = layerF[None,None,:,:]
-    elif len(layer.shape)!=4: randdir = randdir + [np.zeros(layer.shape)]; continue
-
-    # permute so filter index is first
-    layer = layer.transpose(3,0,1,2)
-    layerF = layerF.transpose(3,0,1,2)
-
-    # make randdir filters that has same norm as the corresponding filter in the weights
-    layerR = np.array([ unitvec_like(filter)*filtnorm for (filter, filtnorm) in zip(layer, layerF) ])
-
-    # permute back to standard
-    layerR = layerR.transpose(1,2,3,0)
-    layerR = np.squeeze(layerR)
-    randdir = randdir + [layerR]
-
-  return randdir
-
-dw1 = get_random_dir(weights)
-dw2 = get_random_dir(weights)
-
 eigval, dw1, projvec_corr = evaluator.get_hessian()
+# dw1 = evaluator.get_random_dir()
+dw2 = evaluator.get_random_dir()
 
-cfeed = .5 * np.linspace(-1, 1, 5)
+cfeed = .5 * np.linspace(-1, 1, 100)
 
 xent = np.zeros(len(cfeed))
 for i, c in enumerate(cfeed):
 
-  perturbedWeights = [w + c * d1 for w, d1 in zip(weights, dw1)]
+  perturbedWeights = [w + c * d1 for w, d1 in zip(weights, dw2)]
   evaluator.assign_weights(perturbedWeights)
   xent[i], acc, _ = evaluator.eval()
   print('progress:', i+1, 'of', len(cfeed), '| time:', time())
 
 xent = np.reshape(np.array(xent), cfeed.shape)
 plt.plot(cfeed, xent)
-plt.savefig('for_comet.jpg')
-experiment.log_image('for_comet.jpg')
+experiment.log_figure('landscape')
 
 # clin = 1.5 * np.linspace(-1, 1,40)
 # cc1, cc2 = np.meshgrid(clin, clin)
