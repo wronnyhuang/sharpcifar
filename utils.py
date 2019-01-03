@@ -90,7 +90,7 @@ def filtnormbyN(trainable_variables):
   return [tf.divide(f, tf.cast(c, dtype=tf.float32)) for c,f in zip(filtcnt, norm_values)]
 
 
-def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, num_power_iter=20):
+def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, num_power_iter=10, experiment=None, ckpt=None):
   '''compute fullbatch hessian eigenvalue/eigenvector given an image loader and model'''
 
   for power_iter in range(num_power_iter): # do power iteration to find spectral radius
@@ -100,9 +100,10 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, nu
     for bid, (batchimages, batchtarget) in enumerate(loader):
 
       # change from torch tensor to numpy array
-      batchimages = batchimages.permute(0,2,3,1).numpy()
-      batchtarget = batchtarget.numpy()
-      batchtarget = np.eye(num_classes)[batchtarget]
+      # batchimages = batchimages.permute(0,2,3,1).numpy()
+      # batchtarget = batchtarget.numpy()
+      # batchtarget = np.eye(num_classes)[batchtarget]
+      batchimages, batchtarget = cifar_torch_to_numpy(batchimages, batchtarget)
 
       # accumulate hvp
       if is_training:
@@ -117,6 +118,9 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, nu
     # calculated projected hessian eigvec and eigval
     projvec_op, projvec_corr, xHx, projvec, normvalues = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec, model.normvalues])
     print('HESSIAN: power_iter', power_iter, 'xHx', xHx, 'projvec_corr', projvec_corr, 'projvec_magnitude', global_norm(projvec), 'elapsed', time.time()-tstart)
+    if experiment != None and ckpt != None:
+      experiment.log_metric('eigval/'+ckpt, xHx, power_iter)
+      experiment.log_metric('eigvec_corr/'+ckpt, projvec_corr, power_iter)
 
   return xHx, projvec, projvec_corr
 
@@ -203,6 +207,24 @@ def debug_settings(FLAGS):
   FLAGS.pretrain_url = None
   return FLAGS
 
+# accumulate correct and total scores
+class Accumulator():
+  def __init__(self):
+    self.cleancorr = self.dirtycorr = self.cleantot = self.dirtytot = 0
+  def accum(self, predictions, cleanimages, cleantarget, dirtyimages, dirtytarget):
+    cleanpred = np.argmax(predictions[:len(cleanimages)], axis=1)
+    dirtypred = np.argmax(predictions[len(cleanimages):], axis=1)
+    cleantrue = np.argmax(cleantarget, axis=1)
+    dirtytrue = np.argmax(dirtytarget, axis=1)
+    self.cleancorr += np.sum(cleanpred==cleantrue)
+    self.dirtycorr += np.sum(dirtypred==dirtytrue)
+    self.cleantot += len(cleanimages)
+    self.dirtytot += len(dirtyimages)
+  def get_accs(self):
+    ret = self.cleancorr/self.cleantot, self.dirtycorr/self.dirtytot, self.cleancorr/self.cleantot - self.dirtycorr/self.dirtytot
+    self.__init__()
+    return ret
+
 class Scheduler(object):
   """Sets learning_rate based on global step."""
   def __init__(self, args):
@@ -229,10 +251,10 @@ class Scheduler(object):
       self._lrn_rate = self.args.lrn_rate*0.001
 
 def timenow():
-  return datetime.now().strftime('%m-%d %H:%M:%S')
+  return datetime.now().strftime('%m-%d_%H:%M:%S_%f')
 
 # load pretrained model from dropbox
-def load_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=''):
+def download_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=''):
 
   if pretrain_dir:
     pretrain_url = get_dropbox_url(pretrain_dir, bin_path=bin_path)
@@ -244,4 +266,20 @@ def load_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=''):
                  target_directory=None,
                  filetype='folder',
                  force=True)
+
+# change from torch tensor to numpy array
+def cifar_torch_to_numpy(images, target):
+  images = images.permute(0,2,3,1).numpy()
+  target = np.eye(hps.num_classes)[target.numpy()]
+  return images, target
+
+# a hack needed to pass into the tf placeholder to make poison labels work
+def reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty=False):
+  if nodirty:
+    dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  0*np.ones_like(dirtytarget) ])
+    dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
+  else:
+    dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
+    dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
+  return dirtyOne, dirtyNeg
 

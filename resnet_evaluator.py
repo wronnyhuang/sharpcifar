@@ -33,7 +33,6 @@ class Evaluator(object):
 
     # model and data loader
     self.model = resnet_model.ResNet(self.hps, mode='eval')
-    self.model.build_graph()
     self.loader = loader
 
     # session
@@ -62,9 +61,10 @@ class Evaluator(object):
     saver.restore(self.sess, ckpt_file)
 
   def restore_weights_dropbox(self, pretrain_dir):
-    utils.load_pretrained(log_dir='/root/ckpt/tmp', pretrain_dir=pretrain_dir)
-    self.restore_weights('/root/ckpt/tmp')
-    shutil.rmtree('/root/ckpt/tmp')
+    logdir = utils.timenow()
+    utils.download_pretrained(log_dir='/root/ckpt/'+logdir, pretrain_dir=pretrain_dir)
+    self.restore_weights('/root/ckpt/'+logdir)
+    shutil.rmtree('/root/ckpt/'+logdir)
     print('Ckpt restored from', pretrain_dir)
 
   def assign_weights(self, weights):
@@ -104,10 +104,10 @@ class Evaluator(object):
   def get_filtnorm(self, weights):
     return self.sess.run(utils.filtnorm(weights))
 
-  def get_hessian(self, loader=None, num_classes=10):
+  def get_hessian(self, loader=None, num_classes=10, num_power_iter=10, experiment=None, ckpt=None):
     if loader==None: loader = self.loader
     self.eigval, self.eigvec, self.projvec_corr = \
-      utils.hessian_fullbatch(self.sess, self.model, loader, num_classes, is_training=False)
+      utils.hessian_fullbatch(self.sess, self.model, loader, num_classes, is_training=False, num_power_iter=num_power_iter, experiment=experiment, ckpt=ckpt)
     return self.eigval, self.eigvec, self.projvec_corr
 
   def get_random_dir(self):

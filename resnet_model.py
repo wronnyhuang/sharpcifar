@@ -57,6 +57,7 @@ class ResNet(object):
     self.mode = mode
 
     self._extra_train_ops = []
+    self.build_graph()
 
   def build_graph(self):
     """Build a whole graph for the model."""
@@ -145,11 +146,14 @@ class ResNet(object):
         self.xent = tf.reduce_mean(self.xentPerExample)
 
     # self.xentPerExample = xent # todo oct16 added
-    tf.summary.scalar(self.mode+'/xent', self.xent)
 
     # add spectral radius calculations
     specreg._spec(self, tf.reduce_sum(self.xentPerExample))
 
+    # add accuracy calculation
+    truth = tf.argmax(model.labels, axis=1)
+    pred = tf.argmax(model.predictions, axis=1)
+    self.precision = tf.reduce_mean(tf.to_float(tf.equal(pred, truth)))
 
   def _build_train_op(self):
     """Build training specific ops for the graph."""
@@ -168,7 +172,7 @@ class ResNet(object):
     # specreg.diagnostics(self)
 
     # clip gradient by norm
-    grads, grad_norm = tf.clip_by_global_norm(grads, clip_norm=self.hps.max_grad_norm)
+    grads, self.grad_norm = tf.clip_by_global_norm(grads, clip_norm=self.hps.max_grad_norm)
 
     # # todo oct16 doesn't work yet
     # def perExample(net, xent):
@@ -192,9 +196,6 @@ class ResNet(object):
     train_ops = [apply_op] + self._extra_train_ops
     self.train_op = tf.group(*train_ops)
 
-    tf.summary.scalar(self.mode+'/loss', self.loss)
-    tf.summary.scalar('grad_norm', grad_norm)
-    tf.summary.scalar('learning_rate', self.lrn_rate)
     # tf.summary.scalar('diag/projvec_corr',self.projvec_corr)
     # tf.summary.scalar('diag/xHx', self.xHx)
     # tf.summary.scalar('hp/spec_coef', self.spec_coef)
@@ -209,8 +210,6 @@ class ResNet(object):
         # tf.summary.histogram(var.op.name, var)
 
     self.wdec = tf.add_n(costs)
-    tf.summary.scalar('diag/wdec', self.wdec)
-    tf.summary.scalar('hp/wdec_coef', self.hps.weight_decay_rate)
     return tf.multiply(self.hps.weight_decay_rate, self.wdec)
 
   # TODO(xpan): Consider batch_norm in contrib/layers/python/layers/layers.py

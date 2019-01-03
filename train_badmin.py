@@ -12,7 +12,7 @@ import numpy as np
 import cifar_input
 import resnet_model
 import utils
-from utils import timenow, Scheduler
+from utils import timenow, Scheduler, Accumulator
 import sys
 from cifar_loader_torch import cifar_loader
 from resnet_evaluator import Evaluator
@@ -67,7 +67,8 @@ os.makedirs(log_dir, exist_ok=True)
 if not os.path.exists(join(log_dir, 'comet_expt_key.txt')):
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False, project_name='sharpcifar', workspace="wronnyhuang")
   os.makedirs(log_dir, exist_ok=True)
-  with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f: f.write(experiment.get_key())
+  with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
+    f.write(experiment.get_key())
 else:
   with open(join(log_dir, 'comet_expt_key.txt'), 'r') as f: comet_key = f.read()
   experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
@@ -80,35 +81,26 @@ def train(hps):
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command: ', command_valid)
 
-  # set gpu
-  os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-
-  # load pretrained model
-  utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir)
 
   # build graph [new version]
+  os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
   cleanloader, dirtyloader, testloader, trainloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
   model = resnet_model.ResNet(hps, args.mode)
-  truth = tf.argmax(model.labels, axis=1)
-  predictions = tf.argmax(model.predictions, axis=1)
-  precision = tf.reduce_mean(tf.to_float(tf.equal(predictions, truth)))
 
-  # initialize saver, writer
-  ckpt_file = join(log_dir, 'model.ckpt')
-  saver = tf.train.Saver(max_to_keep=1)
-  summary_writer = tf.summary.FileWriter(args.train_dir)
-
-  # initialize session, queuerunner
+  # initialize session
   print('===================> TRAIN: STARTING SESSION at '+timenow())
   sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, gpu_options=tf.GPUOptions(allow_growth=True)))
   print('===================> TRAIN: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
   scheduler = Scheduler(args)
 
   # load checkpoint
+  utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # download pretrained model
+  ckpt_file = join(log_dir, 'model.ckpt')
+  saver = tf.train.Saver(max_to_keep=1)
   ckpt_state = tf.train.get_checkpoint_state(log_dir)
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
-    print('TRAIN: No pretrained model. Initializing from random')
     sess.run(tf.global_variables_initializer())
+    print('TRAIN: No pretrained model. Initialized from random')
   else:
     saver.restore(sess, ckpt_file)
     print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
@@ -116,77 +108,52 @@ def train(hps):
   for epoch in range(args.epoch_end): # loop over epochs
 
     # loop over batches
-    cleancorr = dirtycorr = cleantot = dirtytot = 0
+    accumulator = Accumulator()
     for batchid, ((cleanimages, cleantarget), (dirtyimages, dirtytarget)) in enumerate(zip(cleanloader, utils.itercycle(dirtyloader))):
 
-      # change from torch tensor to numpy array
-      dirtyimages = dirtyimages.permute(0,2,3,1); cleanimages = cleanimages.permute(0,2,3,1)
-      dirtyimages = dirtyimages.numpy(); dirtytarget = dirtytarget.numpy()
-      cleanimages = cleanimages.numpy(); cleantarget = cleantarget.numpy()
-      # convert to onehot
-      dirtytarget = np.eye(hps.num_classes)[dirtytarget]
-      cleantarget = np.eye(hps.num_classes)[cleantarget]
-      # combine into a batch
+      # convert from torch format to numpy onehot, batch them, and apply softmax hack
+      cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget)
+      dirtyimages, dirtytarget = utils.cifar_torch_to_numpy(dirtyimages, dirtytarget)
       batchimages = np.concatenate([ cleanimages, dirtyimages ])
       batchtarget = np.concatenate([ cleantarget, dirtytarget ])
-      # a hack needed to pass into the tf placeholder to make poison labels work
-      cleanOne = np.concatenate([ 0*np.ones_like(cleantarget),  0*np.ones_like(dirtytarget) ])
-      cleanNeg = np.concatenate([ 1*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
-      dirtyOne = np.concatenate([ 0*np.ones_like(cleantarget),  1*np.ones_like(dirtytarget) ])
-      dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
-      if args.nodirty: dirtyOne = cleanOne; dirtyNeg = cleanNeg
+      dirtyOne, dirtyNeg = utils.reverse_softmax_probability_hack(cleantarget, dirtytarget, args.nodirty)
 
       # run the graph
-      _, global_step, loss, pred, prec, xentPerExample = sess.run(
-        [model.train_op, model.global_step, model.loss, model.predictions, precision, model.xentPerExample],
+      _, global_step, loss, predictions, acc, xent, grad_norm = sess.run(
+        [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.grad_norm],
         feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: batchimages, model.labels: batchtarget,
                    model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
 
-      # accumulate correct and total scores
-      cleanpred = np.argmax(pred[:len(cleanimages)], axis=1)
-      dirtypred = np.argmax(pred[len(cleanimages):], axis=1)
-      cleantrue = np.argmax(cleantarget, axis=1)
-      dirtytrue = np.argmax(dirtytarget, axis=1)
-      cleancorr += np.sum(cleanpred==cleantrue)
-      dirtycorr += np.sum(dirtypred==dirtytrue)
-      cleantot += len(cleanimages)
-      dirtytot += len(dirtyimages)
-
+      accumulator.accum(predictions, cleanimages, cleantarget, dirtyimages, dirtytarget)
       scheduler.after_run(global_step, len(cleanloader))
 
       if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
-        summary_writer.add_summary(summaries, global_step)
-        summary_writer.flush()
-        print('TRAIN: loss: %.3f, precision: %.3f, global_step: %d, epoch: %d, time: %s' %
-                        (loss, prec, global_step, epoch, timenow()))
+        print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
         saver.save(sess, ckpt_file)
-
-      if np.mod(epoch+1, args.epoch_end) == 0: # compute hessian
-        xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True, num_power_iter=10)
-        # compute correlation between projvec of different epochs
-        if 'projvec' in locals():
-          corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
-          print('HESSIAN: projvec mag', utils.global_norm(projvec), 'nextProjvec mag', utils.global_norm(nextProjvec), 'corr_period', corr_period) # ensure unit magnitude
-          experiment.log_metric('corr_period', corr_period, global_step)
-        projvec = nextProjvec
-        # log hessian results
-        experiment.log_metric('xHx', xHx, global_step)
-        experiment.log_metric('corr_iter', corr_iter, global_step)
+        metrics = {}
+        metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = loss, acc, xent, grad_norm
+        experiment.log_metrics(metrics, global_step)
 
     # log clean and dirty accuracy over entire batch
-    experiment.log_metric('clean/acc', cleancorr/cleantot, global_step)
-    experiment.log_metric('dirty/acc', dirtycorr/dirtytot, global_step)
-    experiment.log_metric('clean_minus_dirty', cleancorr/cleantot - dirtycorr/dirtytot)
+    metrics = {}
+    metrics['clean/acc'], metrics['dirty/acc'], metrics['clean_minus_dirty'] = accumulator.get_accs()
+    experiment.log_metrics(metrics, global_step)
     print('TRAIN: epoch', epoch, 'finished. clean/acc', cleancorr/cleantot, 'dirty/acc', dirtycorr/dirtytot)
 
   # closeout script
   print('TRAIN: Done Training at '+str(global_step)+' steps')
 
+  # compute hessian at end
+  xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True, num_power_iter=10)
+  metrics = {}
+  metrics['hess_final/xHx'], metrics['hess_final/projvec_corr_iter'] = xHx, corr_iter
+  experiment.log_metrics(metrics, global_step)
+
   # retrieve best evaluation result
   cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
   metricSummaries = cometapi.get_raw_metric_summaries(experiment.get_key())
   metricSummaries = {b.pop('name'): b for b in metricSummaries}
-  bestEvalPrecision = metricSummaries['eval/Best Precision']['valueMax']
+  bestEvalPrecision = metricSummaries['eval/acc']['valueMax']
   print('sigoptObservation='+str(bestEvalPrecision))
 
   # uploader to dropbox
@@ -198,39 +165,31 @@ def train(hps):
 def evaluate(hps):
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if args.cpu_eval else args.gpu # run eval on cpu
-  cleanloader, _, testloader, _ = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
+  cleanloader , _, testloader, _ = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
-  evaluator = Evaluator(cleanloader, hps)
+  evaluator = Evaluator(testloader, hps)
   print('===================> EVAL: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
 
   # continuously evaluate until process is killed
-  best_precision = 0.0
+  best_acc = 0.0
   while True:
-
+    metrics = {}
     # restore weights from file
     restoreError = evaluator.restore_weights(log_dir)
-    if restoreError: continue
-
+    if restoreError: time.sleep(1); continue
     # KEY LINE OF CODE
-    xent, precision, global_step = evaluator.eval()
-
-    best_precision = max(precision, best_precision)
-    precision_summ = tf.Summary()
-    precision_summ.value.add(
-        tag=args.mode + '/Precision', simple_value=precision)
-    summary_writer = tf.summary.FileWriter(args.eval_dir)
-    summary_writer.add_summary(precision_summ, global_step)
-    best_precision_summ = tf.Summary()
-    best_precision_summ.value.add(
-        tag=args.mode + '/Best Precision', simple_value=best_precision)
-    summary_writer.add_summary(best_precision_summ, global_step)
-    experiment.log_metric('eval/xent', xent, global_step)
-    print('EVAL: loss: %.3f, precision: %.3f, best precision: %.3f time: %s' %
-                    (xent, precision, best_precision, timenow()))
-    summary_writer.flush()
-
-    time.sleep(60)
+    xent, acc, global_step = evaluator.eval()
+    best_acc = max(acc, best_acc)
+    # evaluate hessian as well
+    xHx, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=3, experiment=experiment, ckpt=str(global_step))
+    if 'projvec' in locals(): # compute correlation between projvec of different epochs
+      corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
+      metrics['hess/projvec_corr_period'] = corr_period
+    projvec = nextProjvec
+    metrics['eval/acc'] = acc; metrics['eval/xent'] = xent; metrics['eval/best_acc'] = best_acc; metrics['hess/xHx'] = xHx; metrics['hess/projvec_corr_iter'] = corr_period
+    experiment.log_metrics(metrics, global_step)
+    print('EVAL: loss: %.3f, acc: %.3f, best_acc: %.3f, xHx: %.3f, corr_iter: %.3f, corr_period: %.3f, time: %s' % (xent, acc, best_acc, xHx, corr_iter, corr_period, timenow()))
 
 
 if __name__ == '__main__':
