@@ -49,7 +49,7 @@ parser.add_argument('-spec_coef', default=0, type=float, help='coefficient for t
 parser.add_argument('-spec_step_init', default=0, type=int, help='start spectral radius warmup at this training step')
 parser.add_argument('-num_warmup_epochs', default=25, type=int, help='number of epochs over which speccoef upgrade spans')
 parser.add_argument('-spec_coef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
-parser.add_argument('-specreg_bn', default=False, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
+parser.add_argument('-specreg_bn', default=True, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
 parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign ofhouthe spectral regularization term, negative if looking for sharp minima')
 parser.add_argument('-normalizer', default='filtnorm', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=0, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
@@ -77,7 +77,7 @@ def train(hps):
 
   # start evaluation process
   popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
-  command_valid = 'python resnet_main.py --mode=eval ' + ' '.join(sys.argv[1:])
+  command_valid = 'python main.py -mode=eval ' + ' '.join(sys.argv[1:])
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command: ', command_valid)
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
@@ -146,7 +146,7 @@ def train(hps):
   metrics['hess_final/xHx'], metrics['hess_final/projvec_corr_iter'] = xHx, corr_iter
   experiment.log_metrics(metrics, step=global_step)
 
-  # retrieve best evaluation result
+  # retrieve data from comet
   cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
   metricSummaries = cometapi.get_raw_metric_summaries(experiment.get_key())
   metricSummaries = {b.pop('name'): b for b in metricSummaries}

@@ -4,8 +4,11 @@ import utils
 import time
 np.random.seed(1234)
 
-def _spec(net, xent):
+def _spec(net, xentPerExample):
   """returns principal eig of the hessian"""
+
+  batchsize = tf.shape(xentPerExample)[0]
+  xent = tf.reduce_sum(xentPerExample)
 
   # decide weights from which to compute the spectral radius
   print('Number of trainable weights: ' + str(utils.count_params(tf.trainable_variables())))
@@ -54,11 +57,12 @@ def _spec(net, xent):
   # create op to accumulate gradients
   with tf.variable_scope('accum'):
     hessvecprodAccum = [tf.Variable(tf.zeros_like(h), trainable=False, name=h.op.name) for h in hessVecProd]
-    net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum]
-    net.accum_op = [a.assign_add(g/50000) for a,g in zip(hessvecprodAccum, hessVecProd)]
+    batchsizeAccum = tf.Variable(0, trainable=False, name='batchsize')
+    net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum] + [batchsizeAccum.assign(0)]
+    net.accum_op = [a.assign_add(g) for a,g in zip(hessvecprodAccum, hessVecProd)] + [batchsizeAccum.assign_add(batchsize)]
 
   # principal eigenvalue: project hessian-vector product with that same vector
-  net.xHx = utils.list2dotprod(net.projvec, hessvecprodAccum)
+  net.xHx = utils.list2dotprod(net.projvec, hessvecprodAccum) / tf.to_float(batchsizeAccum)
   # normProjvec = utils.list2norm(net.projvec)
   # net.xHx = tf.divide(net.xHx, tf.square(normProjvec)) # optional: needed only if not normalized in the projvec update
 
