@@ -151,8 +151,8 @@ class ResNet(object):
     specreg._spec(self, tf.reduce_sum(self.xentPerExample))
 
     # add accuracy calculation
-    truth = tf.argmax(model.labels, axis=1)
-    pred = tf.argmax(model.predictions, axis=1)
+    truth = tf.argmax(self.labels, axis=1)
+    pred = tf.argmax(self.predictions, axis=1)
     self.precision = tf.reduce_mean(tf.to_float(tf.equal(pred, truth)))
 
   def _build_train_op(self):

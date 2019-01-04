@@ -17,7 +17,7 @@ def _spec(net, xent):
     print('Number of regularizable weights: ' + str(utils.count_params(net.regularizable)))
   else:
     net.regularizable = tf.trainable_variables() # do include bn weights
-    print('Still zeroing out bias and bn variables in hessian calculation')
+    print('Still zeroing out bias and bn variables in hessian calculation in utils.filtnorm function')
 
   # create initial projection vector (randomly and normalized)
   projvec_init = [np.random.randn(*r.get_shape().as_list()) for r in net.regularizable]

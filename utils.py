@@ -268,9 +268,9 @@ def download_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=
                  force=True)
 
 # change from torch tensor to numpy array
-def cifar_torch_to_numpy(images, target):
+def cifar_torch_to_numpy(images, target, num_classes=10):
   images = images.permute(0,2,3,1).numpy()
-  target = np.eye(hps.num_classes)[target.numpy()]
+  target = np.eye(num_classes)[target.numpy()]
   return images, target
 
 # a hack needed to pass into the tf placeholder to make poison labels work
@@ -283,3 +283,11 @@ def reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty=False):
     dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
   return dirtyOne, dirtyNeg
 
+def allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, nodirty):
+
+  cleanimages, cleantarget = cifar_torch_to_numpy(cleanimages, cleantarget)
+  dirtyimages, dirtytarget = cifar_torch_to_numpy(dirtyimages, dirtytarget)
+  batchimages = np.concatenate([ cleanimages, dirtyimages ])
+  batchtarget = np.concatenate([ cleantarget, dirtytarget ])
+  dirtyOne, dirtyNeg = reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty)
+  return cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg
