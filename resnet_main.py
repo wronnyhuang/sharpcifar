@@ -162,7 +162,7 @@ def train(hps):
         saver.save(sess, ckpt_file)
 
       if np.mod(epoch+1, args.epoch_end) == 0: # compute hessian
-        xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True, num_power_iter=10)
+        xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training_dirty=True, num_power_iter=10)
         # compute correlation between projvec of different epochs
         if 'projvec' in locals():
           corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)

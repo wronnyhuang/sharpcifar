@@ -107,7 +107,7 @@ class Evaluator(object):
   def get_hessian(self, loader=None, num_classes=10, num_power_iter=10, experiment=None, ckpt=None):
     if loader==None: loader = self.loader
     self.eigval, self.eigvec, self.projvec_corr = \
-      utils.hessian_fullbatch(self.sess, self.model, loader, num_classes, is_training=False, num_power_iter=num_power_iter, experiment=experiment, ckpt=ckpt)
+      utils.hessian_fullbatch(self.sess, self.model, loader, num_classes, is_training_dirty=False, num_power_iter=num_power_iter, experiment=experiment, ckpt=ckpt)
     return self.eigval, self.eigvec, self.projvec_corr
 
   def get_random_dir(self):

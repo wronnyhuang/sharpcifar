@@ -6,7 +6,7 @@ import os
 
 torch.manual_seed(1234)
 
-def cifar_loader(data_root, batchsize, fracdirty):
+def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5):
   '''return loaders for cifar'''
 
   transform_train = transforms.Compose([
@@ -22,15 +22,18 @@ def cifar_loader(data_root, batchsize, fracdirty):
 
   num_workers = 2
   trainset = torchvision.datasets.CIFAR10(root=data_root, train=True, download=True, transform=transform_test)
-  trainloader = torch.utils.data.DataLoader(trainset, batch_size=batchsize, shuffle=True, num_workers=num_workers)
   testset = torchvision.datasets.CIFAR10(root=data_root, train=False, download=True, transform=transform_test)
   testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
 
   clean, dirty = torch.utils.data.random_split(trainset, [25000, 25000])
-  dirtysize = int(batchsize * fracdirty)
-  cleansize = batchsize - dirtysize
-  cleanloader = torch.utils.data.DataLoader(clean, batch_size=cleansize, shuffle=True, num_workers=num_workers)
-  dirtyloader = torch.utils.data.DataLoader(dirty, batch_size=dirtysize, shuffle=True, num_workers=num_workers)
+  if poison:
+    dirtysize = int(batchsize * fracdirty)
+    cleansize = batchsize - dirtysize
+    cleanloader = torch.utils.data.DataLoader(clean, batch_size=cleansize, shuffle=True, num_workers=num_workers)
+    dirtyloader = torch.utils.data.DataLoader(dirty, batch_size=dirtysize, shuffle=True, num_workers=num_workers)
+  else:
+    cleansize = batchsize
+    cleanloader = torch.utils.data.DataLoader(clean, batch_size=cleansize, shuffle=True, num_workers=num_workers)
+    dirtyloader = None
 
-
-  return cleanloader, dirtyloader, testloader, trainloader
+  return cleanloader, dirtyloader, testloader

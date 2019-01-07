@@ -2,10 +2,10 @@
 from comet_ml import Experiment, ExistingExperiment
 import tensorflow as tf
 import os
-from os.path import join
+from os.path import join, basename
 import argparse
 from cometml_api import api as cometapi
-import time
+from time import time, sleep
 from datetime import datetime
 import six
 import numpy as np
@@ -20,6 +20,7 @@ import subprocess
 from subprocess import PIPE, STDOUT
 from glob import glob
 from del_old_ckpt import _del_old_ckpt
+from shutil import rmtree
 parser = argparse.ArgumentParser()
 # file names
 parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
@@ -31,7 +32,9 @@ parser.add_argument('-dataset', default='cifar10', type=str, help='cifar10 or ci
 # meta
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
 parser.add_argument('-cpu_eval', action='store_true', help='use cpu for eval, overrides whatever is on --gpu')
-parser.add_argument('-mode', default='train', type=str, help='train or eval.')
+parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
+parser.add_argument('-poison', action='store_true')
+parser.add_argument('-sigopt', action='store_true')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
@@ -43,29 +46,32 @@ parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learnin
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
 parser.add_argument('-weight_decay', default=0.0, type=float, help='coefficient for the weight decay')
 parser.add_argument('-augment', default=True, type=bool, help='use data augmentation.')
-parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
+parser.add_argument('-epoch_end', default=128, type=int, help='ending epoch')
 # specreg stuff
-parser.add_argument('-spec_coef', default=0, type=float, help='coefficient for the spectral radius')
-parser.add_argument('-spec_step_init', default=0, type=int, help='start spectral radius warmup at this training step')
-parser.add_argument('-num_warmup_epochs', default=25, type=int, help='number of epochs over which speccoef upgrade spans')
-parser.add_argument('-spec_coef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
-parser.add_argument('-specreg_bn', default=True, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
+parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
 parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign ofhouthe spectral regularization term, negative if looking for sharp minima')
+parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
+parser.add_argument('-warmupStart', default=256, type=int)
+parser.add_argument('-warmupPeriod', default=25, type=int)
+parser.add_argument('-specreg_bn', default=True, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
 parser.add_argument('-normalizer', default='filtnorm', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
-parser.add_argument('-projvec_beta', default=0, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
+parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
+parser.add_argument('-purge', action='store_true')
 # general helpers
-parser.add_argument('-max_grad_norm', default=30, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
 args = parser.parse_args()
 log_dir = join(args.ckpt_root, args.log_root)
+if args.purge and args.mode=='train': rmtree(log_dir)
 os.makedirs(log_dir, exist_ok=True)
 
 # comet stuff for logging
 if not os.path.exists(join(log_dir, 'comet_expt_key.txt')):
-  experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False, project_name='sharpcifar', workspace="wronnyhuang")
+  experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
+                          project_name='sharpcifar-sigopt' if args.sigopt else 'sharpcifar', workspace="wronnyhuang")
   os.makedirs(log_dir, exist_ok=True)
   with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
     f.write(experiment.get_key())
@@ -83,14 +89,13 @@ def train(hps):
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, testloader, trainloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
+  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, poison=args.poison, fracdirty=args.fracdirty)
   model = resnet_model.ResNet(hps, args.mode)
 
   # initialize session
   print('===================> TRAIN: STARTING SESSION at '+timenow())
   sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, gpu_options=tf.GPUOptions(allow_growth=True)))
   print('===================> TRAIN: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
-  scheduler = Scheduler(args)
 
   # load checkpoint
   utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # download pretrained model
@@ -98,50 +103,87 @@ def train(hps):
   ckpt_state = tf.train.get_checkpoint_state(log_dir)
   var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('Sum/projvec')))
   saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
+  sess.run(tf.global_variables_initializer())
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
-    sess.run(tf.global_variables_initializer())
     print('TRAIN: No pretrained model. Initialized from random')
   else:
     saver.restore(sess, ckpt_file)
     print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
 
+  scheduler = Scheduler(args)
   for epoch in range(args.epoch_end): # loop over epochs
-
-    # loop over batches
     accumulator = Accumulator()
-    for batchid, ((cleanimages, cleantarget), (dirtyimages, dirtytarget)) in enumerate(zip(cleanloader, utils.itercycle(dirtyloader))):
 
-      # convert from torch format to numpy onehot, batch them, and apply softmax hack
-      cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
-        utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty)
+    if args.poison:
 
-      # run the graph
-      _, global_step, loss, predictions, acc, xent, grad_norm = sess.run(
-        [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.grad_norm],
-        feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: batchimages, model.labels: batchtarget,
-                   model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+      # loop over batches
+      for batchid, ((cleanimages, cleantarget), (dirtyimages, dirtytarget)) in enumerate(zip(cleanloader, utils.itercycle(dirtyloader))):
 
-      accumulator.accum(predictions, cleanimages, cleantarget, dirtyimages, dirtytarget)
-      scheduler.after_run(global_step, len(cleanloader))
+        # convert from torch format to numpy onehot, batch them, and apply softmax hack
+        cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
+          utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty)
 
-      if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
-        print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
-        saver.save(sess, ckpt_file)
-        metrics = {}
-        metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = loss, acc, xent, grad_norm
-        experiment.log_metrics(metrics, step=global_step)
+        # run the graph
+        _, global_step, loss, predictions, acc, xent, grad_norm = sess.run(
+          [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.grad_norm],
+          feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: batchimages, model.labels: batchtarget,
+                     model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
 
-    # log clean and dirty accuracy over entire batch
-    metrics = {}
-    metrics['clean/acc'], metrics['dirty/acc'], metrics['clean_minus_dirty'] = accumulator.get_accs()
-    experiment.log_metrics(metrics, step=global_step)
-    print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'], 'dirty/acc', metrics['dirty/acc'])
+        accumulator.accum(predictions, cleanimages, cleantarget, dirtyimages, dirtytarget)
+        scheduler.after_run(global_step, len(cleanloader))
 
-  # closeout script
-  print('TRAIN: Done Training at '+str(global_step)+' steps')
+        if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
+          saver.save(sess, ckpt_file)
+          metrics = {}
+          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
+            scheduler._lrn_rate, acc, xent, grad_norm
+          experiment.log_metrics(metrics, step=global_step)
+          print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
+
+      # log clean and dirty accuracy over entire batch
+      metrics = {}
+      metrics['clean/acc'], metrics['dirty/acc'], metrics['clean_minus_dirty'] = accumulator.get_accs()
+      experiment.log_metrics(metrics, step=global_step)
+      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'], 'dirty/acc', metrics['dirty/acc'])
+
+    else:
+
+      # loop over batches
+      for batchid, (cleanimages, cleantarget) in enumerate(cleanloader):
+
+        # convert from torch format to numpy onehot
+        cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget, hps.num_classes)
+
+        # run the graph
+        _, _, global_step, loss, predictions, acc, xent, grad_norm, xHx, projvec_corr = sess.run(
+          [model.train_op, model.projvec_op, model.global_step, model.loss, model.predictions, model.precision,
+           model.xent, model.grad_norm, model.xHx, model.projvec_corr],
+          feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: cleanimages, model.labels: cleantarget,
+                     model.speccoef: scheduler.speccoef, model.is_accum: False, model.projvec_beta: args.projvec_beta})
+
+        accumulator.accum(predictions, cleanimages, cleantarget)
+        scheduler.after_run(global_step, len(cleanloader))
+
+        if np.mod(global_step, 100)==0: # record metrics and save ckpt so evaluator can be up to date
+          saver.save(sess, ckpt_file)
+          metrics = {}
+          metrics['train/xHx'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
+            xHx, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
+          experiment.log_metrics(metrics, step=global_step)
+          print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
+          if 'timeold' in locals(): experiment.log_metric('time_per_step', (time()-timeold)/100);
+          timeold = time()
+
+      # log clean accuracy over entire batch
+      metrics = {}
+      metrics['clean/acc'], _, _ = accumulator.get_accs()
+      experiment.log_metrics(metrics, step=global_step)
+      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
 
   # compute hessian at end
-  xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True, num_power_iter=2)
+  print('TRAIN: Done Training at '+str(global_step)+' steps')
+  xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes,
+                                                        is_training_dirty=args.poison, num_power_iter=4)
   metrics = {}
   metrics['hess_final/xHx'], metrics['hess_final/projvec_corr_iter'] = xHx, corr_iter
   experiment.log_metrics(metrics, step=global_step)
@@ -161,7 +203,7 @@ def train(hps):
 def evaluate(hps):
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if args.cpu_eval else args.gpu # run eval on cpu
-  cleanloader , _, testloader, _ = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
+  cleanloader , _, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
   evaluator = Evaluator(testloader, hps)
@@ -173,12 +215,12 @@ def evaluate(hps):
     metrics = {}
     # restore weights from file
     restoreError = evaluator.restore_weights(log_dir)
-    if restoreError: time.sleep(1); continue
+    if restoreError: sleep(1); continue
     # KEY LINE OF CODE
     xent, acc, global_step = evaluator.eval()
     best_acc = max(acc, best_acc)
     # evaluate hessian as well
-    xHx, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=3, experiment=experiment, ckpt=str(global_step))
+    xHx, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=1, ckpt=str(global_step))
     if 'projvec' in locals(): # compute correlation between projvec of different epochs
       corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
       metrics['hess/projvec_corr_period'] = corr_period
@@ -186,6 +228,7 @@ def evaluate(hps):
     metrics['eval/acc'] = acc; metrics['eval/xent'] = xent; metrics['eval/best_acc'] = best_acc; metrics['hess/xHx'] = xHx; metrics['hess/projvec_corr_iter'] = corr_iter
     experiment.log_metrics(metrics, step=global_step)
     print('EVAL: loss: %.3f, acc: %.3f, best_acc: %.3f, xHx: %.3f, corr_iter: %.3f, time: %s' % (xent, acc, best_acc, xHx, corr_iter, timenow()))
+    sleep(30)
 
 
 if __name__ == '__main__':
@@ -212,13 +255,14 @@ if __name__ == '__main__':
                              resnet_width=args.resnet_width,
                              use_bottleneck=False,
                              weight_decay_rate=args.weight_decay,
-                             spec_coef=args.spec_coef,
+                             speccoef=args.speccoef,
                              relu_leakiness=0.1,
                              projvec_beta=args.projvec_beta,
                              max_grad_norm=args.max_grad_norm,
                              normalizer=args.normalizer,
                              specreg_bn=args.specreg_bn,
                              spec_sign=args.spec_sign,
+                             poison=args.poison,
                              optimizer='mom')
 
   if args.mode == 'train':

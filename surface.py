@@ -25,12 +25,12 @@ parser.add_argument('-gpu', default='0', type=str)
 args = parser.parse_args()
 
 # comet stuff
-if not os.path.exists('comet_expt_key.txt'):
+if not os.path.exists('comet_expt_key_surface.txt'):
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
                           project_name='landscape', workspace="wronnyhuang")
-  open('comet_expt_key.txt', 'w+').write(experiment.get_key())
+  open('comet_expt_key_surface.txt', 'w+').write(experiment.get_key())
 else:
-  comet_key = open('comet_expt_key.txt', 'r').read()
+  comet_key = open('comet_expt_key_surface.txt', 'r').read()
   experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
 
 # apply settings
@@ -38,7 +38,7 @@ np.random.seed(args.seed)
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
-cleanloader, _, _, _ = cifar_loader('/root/datasets', batchsize=2*64, fracdirty=.5)
+cleanloader, _, _ = cifar_loader('/root/datasets', batchsize=2*64, fracdirty=.5)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox('ckpt/'+args.ckpt)
 

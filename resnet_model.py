@@ -34,7 +34,7 @@ from tensorflow.python.training import moving_averages
 HParams = namedtuple('HParams',
                      'batch_size, num_classes, min_lrn_rate, lrn_rate, '
                      'num_residual_units, resnet_width, use_bottleneck, weight_decay_rate, '
-                     'spec_coef, relu_leakiness, projvec_beta, max_grad_norm, normalizer, specreg_bn, spec_sign, optimizer')
+                     'speccoef, relu_leakiness, projvec_beta, max_grad_norm, normalizer, specreg_bn, spec_sign, optimizer, poison')
 
 
 class ResNet(object):
@@ -129,7 +129,7 @@ class ResNet(object):
       logits = tf.layers.dense(x, self.hps.num_classes)
       self.predictions = tf.nn.softmax(logits)
 
-    if self.mode=='train':
+    if self.mode=='train' and self.hps.poison:
       # cross entropy only for train
       with tf.variable_scope('xent'): # addedby ronny
         self.dirtyOne = tf.placeholder(name='dirtyOne', dtype=tf.float32, shape=[None, 10])
@@ -138,7 +138,7 @@ class ResNet(object):
         self.xentPerExample = K.categorical_crossentropy(self.labels, self.dirtyPredictions)
         self.xent = tf.reduce_mean(self.xentPerExample)
 
-    elif self.mode=='eval':
+    else:
       # cross entropy, only for eval
       with tf.variable_scope('xent'):
         self.xentPerExample = tf.nn.softmax_cross_entropy_with_logits(
@@ -148,7 +148,7 @@ class ResNet(object):
     # self.xentPerExample = xent # todo oct16 added
 
     # add spectral radius calculations
-    specreg._spec(self, self.xentPerExample)
+    self.xHx = specreg._spec(self, self.xentPerExample)
 
     # add accuracy calculation
     truth = tf.argmax(self.labels, axis=1)
@@ -163,6 +163,11 @@ class ResNet(object):
 
     # add regularization terms to xent to form loss function
     self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
+
+    # do we want to include hessian term in the loss, and subsequently backprop thru the hessian
+    if self.mode=='train' and not self.hps.poison:
+      self.speccoef = tf.constant(0, tf.float32)
+      self.loss = self.loss + self.hps.spec_sign * self.speccoef * self.xHx
 
     # build gradients for training
     trainable_variables = tf.trainable_variables()
@@ -198,7 +203,7 @@ class ResNet(object):
 
     # tf.summary.scalar('diag/projvec_corr',self.projvec_corr)
     # tf.summary.scalar('diag/xHx', self.xHx)
-    # tf.summary.scalar('hp/spec_coef', self.spec_coef)
+    # tf.summary.scalar('hp/speccoef', self.speccoef)
     # tf.summary.scalar('hp/projvec_beta', self.hps.projvec_beta)
 
   def _decay(self):

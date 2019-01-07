@@ -57,37 +57,35 @@ def _spec(net, xentPerExample):
   # create op to accumulate gradients
   with tf.variable_scope('accum'):
     hessvecprodAccum = [tf.Variable(tf.zeros_like(h), trainable=False, name=h.op.name) for h in hessVecProd]
-    batchsizeAccum = tf.Variable(0, trainable=False, name='batchsize')
+    batchsizeAccum = tf.Variable(0, trainable=False, name='batchsizeAccum')
     net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum] + [batchsizeAccum.assign(0)]
     net.accum_op = [a.assign_add(g) for a,g in zip(hessvecprodAccum, hessVecProd)] + [batchsizeAccum.assign_add(batchsize)]
 
-  # principal eigenvalue: project hessian-vector product with that same vector
-  net.xHx = utils.list2dotprod(net.projvec, hessvecprodAccum) / tf.to_float(batchsizeAccum)
-  # normProjvec = utils.list2norm(net.projvec)
-  # net.xHx = tf.divide(net.xHx, tf.square(normProjvec)) # optional: needed only if not normalized in the projvec update
+  # accumulate batches over multiple runs or update the eigenvec and return eigenvalue now
+  caseAccum = lambda: (hessvecprodAccum, batchsizeAccum)
+  caseNoaccum = lambda: (hessVecProd, batchsize)
+  net.is_accum = tf.constant(True, dtype=tf.bool)
+  hvp, bsize = tf.cond(net.is_accum, caseAccum, caseNoaccum)
 
+  # principal eigenvalue: project hessian-vector product with that same vector
+  net.xHx = utils.list2dotprod(net.projvec, hvp) / tf.to_float(bsize)
   # next projection vector definition
-  # nextProjvec = [tf.add(h, tf.multiply(p, .9)) for h,p in zip(hessVecProd, net.projvec)] # unnormalized update
-  normHv = utils.list2norm(hessvecprodAccum)
-  unitHv = [tf.divide(h, normHv) for h in hessvecprodAccum]
-  nextProjvec = [tf.add(h, tf.multiply(p, net.hps.projvec_beta)) for h,p in zip(unitHv, net.projvec)]
+  normHv = utils.list2norm(hvp)
+  unitHv = [tf.divide(h, normHv) for h in hvp]
+  net.projvec_beta = tf.constant(0, dtype=tf.float32)
+  nextProjvec = [tf.add(h, tf.multiply(p, net.projvec_beta)) for h,p in zip(unitHv, net.projvec)]
   normNextPv = utils.list2norm(nextProjvec)
   nextProjvec = [tf.divide(p, normNextPv) for p in nextProjvec]
 
   # diagnostics: dotprod and euclidean distance of new projection vector from previous
   net.projvec_corr = utils.list2dotprod(nextProjvec, net.projvec)
-  net.projvec_dist = utils.list2euclidean(nextProjvec, net.projvec)
 
   # op to assign the new projection vector for next iteration
-  with tf.control_dependencies([net.projvec_corr, net.projvec_dist, net.xHx]):
+  with tf.control_dependencies([net.projvec_corr, net.xHx]):
     with tf.variable_scope('projvec_op'):
       net.projvec_op = [tf.assign(p,n) for p,n in zip(net.projvec, nextProjvec)]
 
-  # spectral penalty: multiply by spectral radius coefficient and return
-  net.spec_coef = tf.constant(0, tf.float32)
-  spec_penalty = tf.multiply(net.hps.spec_sign, tf.multiply(net.spec_coef, tf.maximum(net.xHx, 0.0)))
-
-  return spec_penalty
+  return net.xHx
 
 
 def diagnostics(net):

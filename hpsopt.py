@@ -8,22 +8,25 @@ import numpy as np
 from cometml_api import api as cometapi
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--name', default='unnamed-sigopt', type=str)
-parser.add_argument('--resume', action='store_true')
-parser.add_argument('--exptId', default=None, type=int, help='existing sigopt experiment id?')
-parser.add_argument('--gpus', default=[0], type=int, nargs='+')
-parser.add_argument('--bandwidth', default=None, type=int)
-parser.add_argument('--debug', action='store_true')
+parser.add_argument('-name', default='unnamed-sigopt', type=str)
+parser.add_argument('-resume', action='store_true')
+parser.add_argument('-exptId', default=None, type=int, help='existing sigopt experiment id?')
+parser.add_argument('-gpus', default=[0], type=int, nargs='+')
+parser.add_argument('-bw', default=None, type=int)
+parser.add_argument('-debug', action='store_true')
 args = parser.parse_args()
 
 def evaluate_model(assignment, gpu, name):
   assignment = dict(assignment)
-  command = 'python resnet_main.py' + \
-            ' --gpu=' + str(gpu) + \
-            ' --log_root=' + name + ' ' + \
-            ' --pretrain_dir=ckpt/init-nodirty8 ' + \
-            ' '.join(['--' + k +'=' + str(v) for k,v in assignment.items()])
-  if args.debug: command = command + ' --nepoch=51'
+  sysargv = ['python main.py',
+             '-sigopt',
+             '-gpu='+str(gpu),
+             '-log_root='+name,
+             '-pretrain_dir=ckpt/hess-test1-nospec'
+             ]
+  sysargv_plus = ['-' + k +'=' + str(v) for k,v in assignment.items()]
+  command = ' '.join(sysargv+sysargv_plus)
+  if args.debug: command = command + ' -epoch_end=2'
   print(command)
   output = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
 
@@ -32,19 +35,21 @@ def evaluate_model(assignment, gpu, name):
   exptKey = open('/root/ckpt/'+name+'/comet_expt_key.txt', 'r').read()
   metricSummaries = cometapi.get_raw_metric_summaries(exptKey)
   metricSummaries = {b.pop('name'): b for b in metricSummaries}
-  # value = metricSummaries['t/xent']['valueMin'] # xent
-  value = cometapi.get_metrics(exptKey)['eval/xent']['value'].iloc[-10:].median() # gen_gap
+  value = metricSummaries['eval/xent']['valueMin'] # xent
+  # value = cometapi.get_metrics(exptKey)['eval/xent']['value'].iloc[-10:].median() # gen_gap
   value = float(value)
   value = 1/value
   value = min(1e10, value)
-  print('sigoptObservation=' + str(value))
+  print('==> '+name+' | sigoptObservation=' + str(value))
   return value # optimization metric
 
 api_key = 'FJUVRFEZUNYVIMTPCJLSGKOSDNSNTFSDITMBVMZRKZRRVREL'
 
 parameters = [
-              dict(name='lrn_rate', type='double', default_value=1e-1, bounds=dict(min=.2*1e-1, max=5*1e-1)),
-              dict(name='fracdirty', type='double', default_value=.9, bounds=dict(min=.01, max=.95)),
+              dict(name='lrn_rate', type='double', default_value=1e-1, bounds=dict(min=.2e-1, max=2e-1)),
+              dict(name='speccoef', type='double', default_value=1e-1, bounds=dict(min=1e-4, max=5e-1)),
+              dict(name='warmupPeriod', type='int', default_value=12, bounds=dict(min=5, max=50)),
+              dict(name='projvec_beta', type='double', default_value=.93, bounds=dict(min=0, max=.99)),
               # dict(name='distrfrac', type='double', default_value=.6,  bounds=dict(min=.01, max=1)),
               # dict(name='distrstep', type='int', default_value=9000,  bounds=dict(min=5000, max=15000)),
               # dict(name='distrstep2', type='int', default_value=17000,  bounds=dict(min=15000, max=20000)),
@@ -61,7 +66,7 @@ parameters = [
               ]
 
 exptDetail = dict(name=args.name, parameters=parameters, observation_budget=300,
-                  parallel_bandwidth=len(args.gpus) if args.bandwidth==None else args.bandwidth)
+                  parallel_bandwidth=len(args.gpus) if args.bw==None else args.bw)
 
 if __name__ == '__main__':
   master = Master(evalfun=evaluate_model, exptDetail=exptDetail, **vars(args))

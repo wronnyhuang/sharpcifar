@@ -68,7 +68,7 @@ def filtnorm(trainable_variables):
         filtnorm.append(tf.stack(f,axis=1))
       elif len(r.shape)==1: # bn and bias layer
         # f = tf.multiply(tf.ones_like(r), tf.norm(r)) # do not do any normalization/scaling to bias/bn variables
-        f = tf.multiply(tf.zeros_like(r), tf.norm(r)) # zero out bias/bn variables so their curvature doesnt affect hessian
+        f = tf.multiply(tf.zeros_like(r), tf.norm(r)) # zero out bias/bn variables so their curvature doesnt affect hessian and hessreg doesnt affect them
         filtnorm.append(f)
       else:
         print('invalid number of dimensions in layer, should be 1, 2, or 4')
@@ -90,7 +90,7 @@ def filtnormbyN(trainable_variables):
   return [tf.divide(f, tf.cast(c, dtype=tf.float32)) for c,f in zip(filtcnt, norm_values)]
 
 
-def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, num_power_iter=10, experiment=None, ckpt=None):
+def hessian_fullbatch(sess, model, loader, num_classes=10, is_training_dirty=False, num_power_iter=10, experiment=None, ckpt=None):
   '''compute fullbatch hessian eigenvalue/eigenvector given an image loader and model'''
 
   for power_iter in range(num_power_iter): # do power iteration to find spectral radius
@@ -106,7 +106,7 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training=False, nu
       batchimages, batchtarget = cifar_torch_to_numpy(batchimages, batchtarget)
 
       # accumulate hvp
-      if is_training:
+      if is_training_dirty:
         dirtyOne = 0*np.ones_like(batchtarget)
         dirtyNeg = 1*np.ones_like(batchtarget)
         sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
@@ -210,18 +210,21 @@ def debug_settings(FLAGS):
 # accumulate correct and total scores
 class Accumulator():
   def __init__(self):
-    self.cleancorr = self.dirtycorr = self.cleantot = self.dirtytot = 0
-  def accum(self, predictions, cleanimages, cleantarget, dirtyimages, dirtytarget):
+    self.cleancorr = self.dirtycorr = self.cleantot = self.dirtytot = 1e-12
+  def accum(self, predictions, cleanimages, cleantarget, dirtyimages=None, dirtytarget=None):
     cleanpred = np.argmax(predictions[:len(cleanimages)], axis=1)
-    dirtypred = np.argmax(predictions[len(cleanimages):], axis=1)
     cleantrue = np.argmax(cleantarget, axis=1)
-    dirtytrue = np.argmax(dirtytarget, axis=1)
     self.cleancorr += np.sum(cleanpred==cleantrue)
-    self.dirtycorr += np.sum(dirtypred==dirtytrue)
     self.cleantot += len(cleanimages)
-    self.dirtytot += len(dirtyimages)
+    if dirtyimages!=None and dirtytarget!=None:
+      dirtypred = np.argmax(predictions[len(cleanimages):], axis=1)
+      dirtytrue = np.argmax(dirtytarget, axis=1)
+      self.dirtycorr += np.sum(dirtypred==dirtytrue)
+      self.dirtytot += len(dirtyimages)
   def get_accs(self):
-    ret = self.cleancorr/self.cleantot, self.dirtycorr/self.dirtytot, self.cleancorr/self.cleantot - self.dirtycorr/self.dirtytot
+    ret = self.cleancorr/self.cleantot, \
+          self.dirtycorr/self.dirtytot, \
+          self.cleancorr/self.cleantot - self.dirtycorr/self.dirtytot
     self.__init__()
     return ret
 
@@ -229,18 +232,13 @@ class Scheduler(object):
   """Sets learning_rate based on global step."""
   def __init__(self, args):
     self._lrn_rate = 0
-    self._spec_coef = args.spec_coef_init
+    self.speccoef = args.speccoef_init
     self.args = args
   def after_run(self, global_step, steps_per_epoch):
-    # warmup of spectral coefficient
-    num_full_batch = 50000.
-    num_warmup_epochs = self.args.num_warmup_epochs
-    num_warmup_steps = num_warmup_epochs*num_full_batch/self.args.batch_size
-    self._spec_coef = (self.args.spec_coef-self.args.spec_coef_init)*1/(1 + np.exp(-(global_step - self.args.spec_step_init) / (num_warmup_steps / 12))) \
-                      + self.args.spec_coef_init
-    # warmup of learning rate
-    # self._lrn_rate  = self.args.lrn_rate*np.minimum(np.maximum((train_step-400000)/num_warmup_steps, 0), 1)
     epoch = float(global_step)/steps_per_epoch
+    # warmup of spectral coefficient
+    self.speccoef = self.args.speccoef * np.clip( ( max(0, epoch - self.args.warmupStart) / self.args.warmupPeriod )**2, 0, 1)
+    # warmup of learning rate
     if epoch < 102.4:
       self._lrn_rate = self.args.lrn_rate
     elif epoch < 153.6:

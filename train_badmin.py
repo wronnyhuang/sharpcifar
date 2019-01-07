@@ -141,7 +141,7 @@ def train(hps):
   print('TRAIN: Done Training at '+str(global_step)+' steps')
 
   # compute hessian at end
-  xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training=True, num_power_iter=2)
+  xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes, is_training_dirty=True, num_power_iter=2)
   metrics = {}
   metrics['hess_final/xHx'], metrics['hess_final/projvec_corr_iter'] = xHx, corr_iter
   experiment.log_metrics(metrics, step=global_step)
