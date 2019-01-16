@@ -111,18 +111,30 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training_dirty=Fal
         dirtyNeg = 1*np.ones_like(batchtarget)
         sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
       else:
-        sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget})
+        # sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget})
+        _, valtotAccum, bzAccum, valAccum, valtotEager, bzEager, valEager = \
+          sess.run([model.accum_op, model.valtotAccum, model.bzAccum, model.valAccum, model.valtotEager, model.bzEager, model.valEager],
+            {model._images: batchimages, model.labels: batchtarget})
 
-      if power_iter==0 and bid==0: print('Starting hessian calculation, just did first batch of first power iteration')
+        # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)
+        # print('valtotAccum:', valtotAccum, ', bzAccum:', bzAccum, ', valAccum:', valAccum)
+
+      # if power_iter==0 and bid==0: print('Starting hessian calculation, just did first batch of first power iteration')
+      # if bid==: break
 
     # calculated projected hessian eigvec and eigval
-    projvec_op, projvec_corr, xHx, projvec, normvalues = sess.run([model.projvec_op, model.projvec_corr, model.xHx, model.projvec, model.normvalues])
-    print('HESSIAN: power_iter', power_iter, 'xHx', xHx, 'projvec_corr', projvec_corr, 'projvec_magnitude', global_norm(projvec), 'elapsed', time.time()-tstart)
+    projvec_op, projvec, projvec_corr, valtotAccum, valAccum, bzAccum = \
+      sess.run([model.projvec_op, model.projvec, model.projvec_corr, model.valtotAccum, model.valAccum, model.bzAccum])
+    # print('valtotAccum:', valtotAccum, ', bzAccum:', bzAccum, ', valAccum:', valAccum)
+
+    print('HESSIAN: power_iter:', power_iter, ', valAccum:', valAccum, ', projvec_corr:', projvec_corr, ', elapsed:', time.time()-tstart)
+    print('---')
+
     if experiment != None and ckpt != None:
       experiment.log_metric('eigval/'+ckpt, xHx, power_iter)
       experiment.log_metric('eigvec_corr/'+ckpt, projvec_corr, power_iter)
 
-  return xHx, projvec, projvec_corr
+  return valAccum, projvec, projvec_corr
 
 def fwd_gradients(ys, xs, d_xs=None):
   """Forward-mode pushforward analogous to the pullback defined by tf.gradients.
@@ -234,6 +246,7 @@ class Scheduler(object):
     self._lrn_rate = 0
     self.speccoef = args.speccoef_init
     self.args = args
+
   def after_run(self, global_step, steps_per_epoch):
     epoch = float(global_step)/steps_per_epoch
     # warmup of spectral coefficient
@@ -258,7 +271,7 @@ def download_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=
     pretrain_url = get_dropbox_url(pretrain_dir, bin_path=bin_path)
 
   # download pretrained model if a download url was specified
-  print(pretrain_url)
+  print('pretrain_url:', pretrain_url)
   maybe_download(source_url=pretrain_url,
                  filename=log_dir,
                  target_directory=None,
@@ -281,10 +294,10 @@ def reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty=False):
     dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
   return dirtyOne, dirtyNeg
 
-def allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, nodirty):
+def allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, nodirty, num_classes):
 
-  cleanimages, cleantarget = cifar_torch_to_numpy(cleanimages, cleantarget)
-  dirtyimages, dirtytarget = cifar_torch_to_numpy(dirtyimages, dirtytarget)
+  cleanimages, cleantarget = cifar_torch_to_numpy(cleanimages, cleantarget, num_classes)
+  dirtyimages, dirtytarget = cifar_torch_to_numpy(dirtyimages, dirtytarget, num_classes)
   batchimages = np.concatenate([ cleanimages, dirtyimages ])
   batchtarget = np.concatenate([ cleantarget, dirtytarget ])
   dirtyOne, dirtyNeg = reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty)

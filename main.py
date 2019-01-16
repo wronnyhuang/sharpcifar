@@ -2,7 +2,7 @@
 from comet_ml import Experiment, ExistingExperiment
 import tensorflow as tf
 import os
-from os.path import join, basename
+from os.path import join, basename, exists
 import argparse
 from cometml_api import api as cometapi
 from time import time, sleep
@@ -25,16 +25,15 @@ parser = argparse.ArgumentParser()
 # file names
 parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
 parser.add_argument('-ckpt_root', default='/root/ckpt', type=str, help='Parents directory of log_root')
-parser.add_argument('-train_data_path', default='/root/datasets/cifar-100-binary/train.bin', type=str, help='Filepattern for training data.')
-parser.add_argument('-eval_data_path', default='/root/datasets/cifar-100-binary/test.bin', type=str, help='Filepattern for eval data')
 parser.add_argument('-bin_path', default='/root/bin', type=str, help='bin: directory of helpful scripts')
-parser.add_argument('-dataset', default='cifar10', type=str, help='cifar10 or cifar100.')
+parser.add_argument('-cifar100', action='store_true')
 # meta
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
 parser.add_argument('-cpu_eval', action='store_true', help='use cpu for eval, overrides whatever is on --gpu')
 parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
+parser.add_argument('-nohess', action='store_true')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
@@ -44,15 +43,15 @@ parser.add_argument('-resnet_width', default=1, type=int, help='Multiplier of th
 # training hyperparam
 parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learning rate to use for training')
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
-parser.add_argument('-weight_decay', default=0.0, type=float, help='coefficient for the weight decay')
+parser.add_argument('-weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
 parser.add_argument('-augment', default=True, type=bool, help='use data augmentation.')
-parser.add_argument('-epoch_end', default=128, type=int, help='ending epoch')
+parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
 # specreg stuff
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
 parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign ofhouthe spectral regularization term, negative if looking for sharp minima')
 parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
 parser.add_argument('-warmupStart', default=256, type=int)
-parser.add_argument('-warmupPeriod', default=25, type=int)
+parser.add_argument('-warmupPeriod', default=20, type=int)
 parser.add_argument('-specreg_bn', default=True, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
 parser.add_argument('-normalizer', default='filtnorm', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
@@ -65,13 +64,15 @@ parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allow
 parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
 args = parser.parse_args()
 log_dir = join(args.ckpt_root, args.log_root)
-if args.purge and args.mode=='train': rmtree(log_dir)
+if args.purge and args.mode=='train' and exists(log_dir): rmtree(log_dir)
 os.makedirs(log_dir, exist_ok=True)
 
 # comet stuff for logging
-if not os.path.exists(join(log_dir, 'comet_expt_key.txt')):
+if not exists(join(log_dir, 'comet_expt_key.txt')):
+  projname = 'poisoncifar' if args.poison else 'hesscifar'
+  projname = projname + '-sigopt' if args.sigopt else projname
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-                          project_name='sharpcifar-sigopt' if args.sigopt else 'sharpcifar', workspace="wronnyhuang")
+                          project_name=projname, workspace="wronnyhuang")
   os.makedirs(log_dir, exist_ok=True)
   with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
     f.write(experiment.get_key())
@@ -79,7 +80,7 @@ else:
   with open(join(log_dir, 'comet_expt_key.txt'), 'r') as f: comet_key = f.read()
   experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
 
-def train(hps):
+def train():
 
   # start evaluation process
   popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
@@ -89,8 +90,8 @@ def train(hps):
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, poison=args.poison, fracdirty=args.fracdirty)
-  model = resnet_model.ResNet(hps, args.mode)
+  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100)
+  model = resnet_model.ResNet(args, args.mode)
 
   # initialize session
   print('===================> TRAIN: STARTING SESSION at '+timenow())
@@ -107,7 +108,7 @@ def train(hps):
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
     print('TRAIN: No pretrained model. Initialized from random')
   else:
-    saver.restore(sess, ckpt_file)
+    saver.restore(sess, ckpt_state.model_checkpoint_path)
     print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
 
   scheduler = Scheduler(args)
@@ -121,7 +122,7 @@ def train(hps):
 
         # convert from torch format to numpy onehot, batch them, and apply softmax hack
         cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
-          utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty)
+          utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty, args.num_classes)
 
         # run the graph
         _, global_step, loss, predictions, acc, xent, grad_norm = sess.run(
@@ -146,31 +147,32 @@ def train(hps):
       experiment.log_metrics(metrics, step=global_step)
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'], 'dirty/acc', metrics['dirty/acc'])
 
-    else:
+    else: # use hessian
 
       # loop over batches
       for batchid, (cleanimages, cleantarget) in enumerate(cleanloader):
 
         # convert from torch format to numpy onehot
-        cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget, hps.num_classes)
+        cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget, args.num_classes)
 
         # run the graph
-        _, _, global_step, loss, predictions, acc, xent, grad_norm, xHx, projvec_corr = sess.run(
-          [model.train_op, model.projvec_op, model.global_step, model.loss, model.predictions, model.precision,
-           model.xent, model.grad_norm, model.xHx, model.projvec_corr],
-          feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: cleanimages, model.labels: cleantarget,
-                     model.speccoef: scheduler.speccoef, model.is_accum: False, model.projvec_beta: args.projvec_beta})
+        valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
+          sess.run([model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
+            model.loss, model.predictions, model.precision, model.xent, model.grad_norm, model.valEager, model.projvec_corr],
+            feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: cleanimages, model.labels: cleantarget,
+                       model.speccoef: scheduler.speccoef, model.projvec_beta: args.projvec_beta})
 
+        # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)
         accumulator.accum(predictions, cleanimages, cleantarget)
         scheduler.after_run(global_step, len(cleanloader))
 
         if np.mod(global_step, 100)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
           metrics = {}
-          metrics['train/xHx'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
-            xHx, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
+          metrics['train/val'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
+            valEager, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
           experiment.log_metrics(metrics, step=global_step)
-          print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
+          print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
           if 'timeold' in locals(): experiment.log_metric('time_per_step', (time()-timeold)/100);
           timeold = time()
 
@@ -179,14 +181,6 @@ def train(hps):
       metrics['clean/acc'], _, _ = accumulator.get_accs()
       experiment.log_metrics(metrics, step=global_step)
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
-
-  # compute hessian at end
-  print('TRAIN: Done Training at '+str(global_step)+' steps')
-  xHx, nextProjvec, corr_iter = utils.hessian_fullbatch(sess, model, cleanloader, hps.num_classes,
-                                                        is_training_dirty=args.poison, num_power_iter=4)
-  metrics = {}
-  metrics['hess_final/xHx'], metrics['hess_final/projvec_corr_iter'] = xHx, corr_iter
-  experiment.log_metrics(metrics, step=global_step)
 
   # retrieve data from comet
   cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
@@ -200,35 +194,38 @@ def train(hps):
   # os.system('dbx upload '+log_dir+' ckpt/')
 
 
-def evaluate(hps):
+def evaluate():
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if args.cpu_eval else args.gpu # run eval on cpu
-  cleanloader , _, testloader = cifar_loader('/root/datasets', batchsize=hps.batch_size, fracdirty=args.fracdirty)
+  cleanloader, _, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty, cifar100=args.cifar100)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
-  evaluator = Evaluator(testloader, hps)
+  evaluator = Evaluator(testloader, args)
   print('===================> EVAL: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
 
   # continuously evaluate until process is killed
   best_acc = 0.0
+  utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # download pretrained model
   while True:
     metrics = {}
     # restore weights from file
     restoreError = evaluator.restore_weights(log_dir)
-    if restoreError: sleep(1); continue
+    if restoreError: print('no weights to restore'); sleep(1); continue
     # KEY LINE OF CODE
     xent, acc, global_step = evaluator.eval()
     best_acc = max(acc, best_acc)
     # evaluate hessian as well
-    xHx, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=1, ckpt=str(global_step))
-    if 'projvec' in locals(): # compute correlation between projvec of different epochs
-      corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
-      metrics['hess/projvec_corr_period'] = corr_period
-    projvec = nextProjvec
-    metrics['eval/acc'] = acc; metrics['eval/xent'] = xent; metrics['eval/best_acc'] = best_acc; metrics['hess/xHx'] = xHx; metrics['hess/projvec_corr_iter'] = corr_iter
+    val = corr_iter = 0
+    if not args.nohess:
+      val, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=3)
+      if 'projvec' in locals(): # compute correlation between projvec of different epochs
+        corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
+        metrics['hess/projvec_corr_period'] = corr_period
+      projvec = nextProjvec
+    # log metrics
+    metrics['eval/acc'] = acc; metrics['eval/xent'] = xent; metrics['eval/best_acc'] = best_acc; metrics['hess/val'] = val; metrics['hess/projvec_corr_iter'] = corr_iter
     experiment.log_metrics(metrics, step=global_step)
-    print('EVAL: loss: %.3f, acc: %.3f, best_acc: %.3f, xHx: %.3f, corr_iter: %.3f, time: %s' % (xent, acc, best_acc, xHx, corr_iter, timenow()))
-    sleep(30)
+    print('EVAL: loss: %.3f, acc: %.3f, best_acc: %.3f, val: %.3f, corr_iter: %.3f, global_step: %s, time: %s' % (xent, acc, best_acc, val, corr_iter, global_step, timenow()))
 
 
 if __name__ == '__main__':
@@ -239,39 +236,32 @@ if __name__ == '__main__':
   experiment.log_parameters(vars(args))
   experiment.log_other('hostmachine', hostname)
 
-  # put train and eval run logs in the log directory
-  args.augment = False if args.mode == 'eval' else True
+  # hps = resnet_model.HParams(batch_size=args.batch_size,
+  #                            num_classes=num_classes,
+  #                            min_lrn_rate=0.0001,
+  #                            num_residual_units=args.num_resunits,
+  #                            resnet_width=args.resnet_width,
+  #                            use_bottleneck=False,
+  #                            weight_decay_rate=args.weight_decay,
+  #                            speccoef=args.speccoef,
+  #                            relu_leakiness=0.1,
+  #                            projvec_beta=args.projvec_beta,
+  #                            max_grad_norm=args.max_grad_norm,
+  #                            normalizer=args.normalizer,
+  #                            specreg_bn=args.specreg_bn,
+  #                            spec_sign=args.spec_sign,
+  #                            poison=args.poison,
+  #                            optimizer='mom')
 
-  if args.dataset == 'cifar10':
-    num_classes = 10
-  elif args.dataset == 'cifar100':
-    num_classes = 100
-
-  hps = resnet_model.HParams(batch_size=args.batch_size,
-                             num_classes=num_classes,
-                             min_lrn_rate=0.0001,
-                             lrn_rate=0.1,
-                             num_residual_units=args.num_resunits,
-                             resnet_width=args.resnet_width,
-                             use_bottleneck=False,
-                             weight_decay_rate=args.weight_decay,
-                             speccoef=args.speccoef,
-                             relu_leakiness=0.1,
-                             projvec_beta=args.projvec_beta,
-                             max_grad_norm=args.max_grad_norm,
-                             normalizer=args.normalizer,
-                             specreg_bn=args.specreg_bn,
-                             spec_sign=args.spec_sign,
-                             poison=args.poison,
-                             optimizer='mom')
+  args.num_classes = 100 if args.cifar100 else 10
 
   if args.mode == 'train':
     try:
-      train(hps)
+      train()
     finally:
       os.system(join(args.bin_path, 'rek') + ' "mode=eval.*log_root=' + args.log_root + '"') # kill evaluation processes
       print('killed evaluaton')
 
   elif args.mode == 'eval':
-    evaluate(hps)
+    evaluate()
 

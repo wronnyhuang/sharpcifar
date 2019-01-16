@@ -33,29 +33,42 @@ from tensorflow.python.training import moving_averages
 
 HParams = namedtuple('HParams',
                      'batch_size, num_classes, min_lrn_rate, lrn_rate, '
-                     'num_residual_units, resnet_width, use_bottleneck, weight_decay_rate, '
+                     'num_resunits, resnet_width, use_bottleneck, weight_decay_rate, '
                      'speccoef, relu_leakiness, projvec_beta, max_grad_norm, normalizer, specreg_bn, spec_sign, optimizer, poison')
 
 
 class ResNet(object):
   """ResNet model."""
 
-  def __init__(self, hps, mode):
+  def __init__(self, args, mode):
     """ResNet constructor.
 
     Args:
-      hps: Hyperparameters.
+      args: arguments
       images: Batches of images. [batch_size, image_size, image_size, 3]
       labels: Batches of labels. [batch_size, num_classes]
       mode: One of 'train' and 'eval'.
     """
+    self.relu_leakiness = 0.1
+    self.optimizer = 'mom'
+    self.use_bottleneck = False
+
     images = tf.placeholder(name='input/images', dtype=tf.float32, shape=(None, 32, 32, 3))
-    labels = tf.placeholder(name='input/labels', dtype=tf.float32, shape=(None, hps.num_classes))
-    self.hps = hps
+    labels = tf.placeholder(name='input/labels', dtype=tf.float32, shape=(None, args.num_classes))
+    # images = tf.placeholder(name='input/images', dtype=tf.float32, shape=(128, 32, 32, 3))
+    # labels = tf.placeholder(name='input/labels', dtype=tf.float32, shape=(128, args.num_classes))
     self._images = images
     self.labels = labels
+    self.args = args
     self.mode = mode
 
+    # build the necessary probes here
+    self.lrn_rate = tf.constant(0, tf.float32)
+    self.momentum = tf.constant(.9, tf.float32)
+    self.speccoef = tf.constant(0, tf.float32)
+    self.projvec_beta = tf.constant(0, dtype=tf.float32)
+
+    # build the graph
     self._extra_train_ops = []
     self.build_graph()
 
@@ -67,7 +80,6 @@ class ResNet(object):
     self._build_model()
     if self.mode == 'train':
       self._build_train_op()
-    self.summaries = tf.summary.merge_all()
     print('Graph built in '+str(time.time()-start)+' sec')
     time.sleep(1)
 
@@ -83,53 +95,53 @@ class ResNet(object):
 
     strides = [1, 2, 2]
     activate_before_residual = [True, False, False]
-    if self.hps.use_bottleneck:
+    if self.use_bottleneck:
       res_func = self._bottleneck_residual
       # filters = [16, 64, 128, 256]
     else:
       res_func = self._residual
       filters = [16, 16, 32, 64]
-      f = self.hps.resnet_width
+      f = self.args.resnet_width
       filters = [16, 16*f, 32*f, 64*f]
       # Uncomment the following codes to use w28-10 wide residual network.
       # It is more memory efficient than very deep residual network and has
       # comparably good performance.
       # https://arxiv.org/pdf/1605.07146v1.pdf
       # filters = [16, 160, 320, 640]
-      # Update hps.num_residual_units to 4
+      # Update args.num_resunits to 4
 
     with tf.variable_scope('unit_1_0'):
       x = res_func(x, filters[0], filters[1], self._stride_arr(strides[0]),
                    activate_before_residual[0])
-    for i in six.moves.range(1, self.hps.num_residual_units):
+    for i in six.moves.range(1, self.args.num_resunits):
       with tf.variable_scope('unit_1_%d' % i):
         x = res_func(x, filters[1], filters[1], self._stride_arr(1), False)
 
     with tf.variable_scope('unit_2_0'):
       x = res_func(x, filters[1], filters[2], self._stride_arr(strides[1]),
                    activate_before_residual[1])
-    for i in six.moves.range(1, self.hps.num_residual_units):
+    for i in six.moves.range(1, self.args.num_resunits):
       with tf.variable_scope('unit_2_%d' % i):
         x = res_func(x, filters[2], filters[2], self._stride_arr(1), False)
 
     with tf.variable_scope('unit_3_0'):
       x = res_func(x, filters[2], filters[3], self._stride_arr(strides[2]),
                    activate_before_residual[2])
-    for i in six.moves.range(1, self.hps.num_residual_units):
+    for i in six.moves.range(1, self.args.num_resunits):
       with tf.variable_scope('unit_3_%d' % i):
         x = res_func(x, filters[3], filters[3], self._stride_arr(1), False)
 
     with tf.variable_scope('unit_last'):
       x = self._batch_norm('final_bn', x)
-      x = self._relu(x, self.hps.relu_leakiness)
+      x = self._relu(x, self.relu_leakiness)
       x = self._global_avg_pool(x)
 
     with tf.variable_scope('logit'):
-      # logits = self._fully_connected(x, self.hps.num_classes) # modified by ronny
-      logits = tf.layers.dense(x, self.hps.num_classes)
+      # logits = self._fully_connected(x, self.args.num_classes) # modified by ronny
+      logits = tf.layers.dense(x, self.args.num_classes)
       self.predictions = tf.nn.softmax(logits)
 
-    if self.mode=='train' and self.hps.poison:
+    if self.mode=='train' and self.args.poison:
       # cross entropy only for train
       with tf.variable_scope('xent'): # addedby ronny
         self.dirtyOne = tf.placeholder(name='dirtyOne', dtype=tf.float32, shape=[None, 10])
@@ -137,7 +149,6 @@ class ResNet(object):
         self.dirtyPredictions = self.dirtyOne + self.dirtyNeg * self.predictions
         self.xentPerExample = K.categorical_crossentropy(self.labels, self.dirtyPredictions)
         self.xent = tf.reduce_mean(self.xentPerExample)
-
     else:
       # cross entropy, only for eval
       with tf.variable_scope('xent'):
@@ -145,10 +156,8 @@ class ResNet(object):
             logits=logits, labels=self.labels)
         self.xent = tf.reduce_mean(self.xentPerExample)
 
-    # self.xentPerExample = xent # todo oct16 added
-
     # add spectral radius calculations
-    self.xHx = specreg._spec(self, self.xentPerExample)
+    self.valEager = specreg._spec(self, self.xentPerExample, self.mode=='eval', self.args.nohess)
 
     # add accuracy calculation
     truth = tf.argmax(self.labels, axis=1)
@@ -158,41 +167,22 @@ class ResNet(object):
   def _build_train_op(self):
     """Build training specific ops for the graph."""
 
-    # build the learning rate probe here
-    self.lrn_rate = tf.constant(self.hps.lrn_rate, tf.float32)
-
     # add regularization terms to xent to form loss function
     self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
 
     # do we want to include hessian term in the loss, and subsequently backprop thru the hessian
-    if self.mode=='train' and not self.hps.poison:
-      self.speccoef = tf.constant(0, tf.float32)
-      self.loss = self.loss + self.hps.spec_sign * self.speccoef * self.xHx
-
-    # build gradients for training
+    if self.mode=='train' and not self.args.poison and not self.args.nohess:
+      self.loss = self.loss + self.args.spec_sign * self.speccoef * self.valEager    # build gradients for training
     trainable_variables = tf.trainable_variables()
     tstart = time.time(); grads = tf.gradients(self.loss, trainable_variables); print('Built grads: '+str(time.time()-tstart))
 
-    # do diagnostics on weights
-    # specreg.diagnostics(self)
-
     # clip gradient by norm
-    grads, self.grad_norm = tf.clip_by_global_norm(grads, clip_norm=self.hps.max_grad_norm)
+    grads, self.grad_norm = tf.clip_by_global_norm(grads, clip_norm=self.args.max_grad_norm)
 
-    # # todo oct16 doesn't work yet
-    # def perExample(net, xent):
-    #   loss = xent + self._decay() + specreg._spec(net, xent)
-    #   grads = tf.gradients(loss, tf.trainable_variables())
-    #   grads, grad_norm = tf.clip_by_global_norm(grads, clip_norm=net.hps.max_grad_norm)
-    #   return loss, grads, grad_norm
-    # tmp = tf.map_fn(lambda x: perExample(self, x), self.xentPerExample)
-    # lossPerExample, gradsPerExample, gradNormPerExample = zip(*tmp)
-    # self.loss, grads, grad_norm = tf.reduce_mean(lossPerExample), tf.reduce_mean(gradsPerExample), tf.maximum(gradNormPerExample)
-
-    if self.hps.optimizer == 'sgd':
+    if self.optimizer == 'sgd':
       optimizer = tf.train.GradientDescentOptimizer(self.lrn_rate)
-    elif self.hps.optimizer == 'mom':
-      optimizer = tf.train.MomentumOptimizer(self.lrn_rate, 0.9)
+    elif self.optimizer == 'mom':
+      optimizer = tf.train.MomentumOptimizer(self.lrn_rate, self.momentum)
 
     apply_op = optimizer.apply_gradients(
         zip(grads, trainable_variables),
@@ -200,11 +190,6 @@ class ResNet(object):
 
     train_ops = [apply_op] + self._extra_train_ops
     self.train_op = tf.group(*train_ops)
-
-    # tf.summary.scalar('diag/projvec_corr',self.projvec_corr)
-    # tf.summary.scalar('diag/xHx', self.xHx)
-    # tf.summary.scalar('hp/speccoef', self.speccoef)
-    # tf.summary.scalar('hp/projvec_beta', self.hps.projvec_beta)
 
   def _decay(self):
     """L2 weight decay loss."""
@@ -215,7 +200,7 @@ class ResNet(object):
         # tf.summary.histogram(var.op.name, var)
 
     self.wdec = tf.add_n(costs)
-    return tf.multiply(self.hps.weight_decay_rate, self.wdec)
+    return tf.multiply(self.args.weight_decay, self.wdec)
 
   # TODO(xpan): Consider batch_norm in contrib/layers/python/layers/layers.py
   def _batch_norm(self, name, x):
@@ -269,20 +254,20 @@ class ResNet(object):
     if activate_before_residual:
       with tf.variable_scope('shared_activation'):
         x = self._batch_norm('init_bn', x)
-        x = self._relu(x, self.hps.relu_leakiness)
+        x = self._relu(x, self.relu_leakiness)
         orig_x = x
     else:
       with tf.variable_scope('residual_only_activation'):
         orig_x = x
         x = self._batch_norm('init_bn', x)
-        x = self._relu(x, self.hps.relu_leakiness)
+        x = self._relu(x, self.relu_leakiness)
 
     with tf.variable_scope('sub1'):
       x = self._conv('conv1', x, 3, in_filter, out_filter, stride)
 
     with tf.variable_scope('sub2'):
       x = self._batch_norm('bn2', x)
-      x = self._relu(x, self.hps.relu_leakiness)
+      x = self._relu(x, self.relu_leakiness)
       x = self._conv('conv2', x, 3, out_filter, out_filter, [1, 1, 1, 1])
 
     with tf.variable_scope('sub_add'):
@@ -302,25 +287,25 @@ class ResNet(object):
     if activate_before_residual:
       with tf.variable_scope('common_bn_relu'):
         x = self._batch_norm('init_bn', x)
-        x = self._relu(x, self.hps.relu_leakiness)
+        x = self._relu(x, self.relu_leakiness)
         orig_x = x
     else:
       with tf.variable_scope('residual_bn_relu'):
         orig_x = x
         x = self._batch_norm('init_bn', x)
-        x = self._relu(x, self.hps.relu_leakiness)
+        x = self._relu(x, self.relu_leakiness)
 
     with tf.variable_scope('sub1'):
       x = self._conv('conv1', x, 1, in_filter, out_filter/4, stride)
 
     with tf.variable_scope('sub2'):
       x = self._batch_norm('bn2', x)
-      x = self._relu(x, self.hps.relu_leakiness)
+      x = self._relu(x, self.relu_leakiness)
       x = self._conv('conv2', x, 3, out_filter/4, out_filter/4, [1, 1, 1, 1])
 
     with tf.variable_scope('sub3'):
       x = self._batch_norm('bn3', x)
-      x = self._relu(x, self.hps.relu_leakiness)
+      x = self._relu(x, self.relu_leakiness)
       x = self._conv('conv3', x, 1, out_filter/4, out_filter, [1, 1, 1, 1])
 
     with tf.variable_scope('sub_add'):
@@ -347,7 +332,7 @@ class ResNet(object):
 
   def _fully_connected(self, x, out_dim):
     """FullyConnected layer for final output."""
-    x = tf.reshape(x, [self.hps.batch_size, -1])
+    x = tf.reshape(x, [self.args.batch_size, -1])
     w = tf.get_variable(
         'DW', [x.get_shape()[1], out_dim],
         initializer=tf.uniform_unit_scaling_initializer(factor=1.0))

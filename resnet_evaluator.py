@@ -9,13 +9,12 @@ import shutil
 
 class Evaluator(object):
 
-  def __init__(self, loader, hps=None):
+  def __init__(self, loader, args=None):
 
-    if hps == None:
-      self.hps = resnet_model.HParams(batch_size=None,
+    if args == None:
+      self.args = resnet_model.HParams(batch_size=None,
                                       num_classes=10,
                                       min_lrn_rate=0.0001,
-                                      lrn_rate=0.1,
                                       num_residual_units=3,
                                       resnet_width=1,
                                       use_bottleneck=False,
@@ -29,10 +28,10 @@ class Evaluator(object):
                                       spec_sign=1.0,
                                       optimizer='mom')
     else:
-      self.hps = hps
+      self.args = args
 
     # model and data loader
-    self.model = resnet_model.ResNet(self.hps, mode='eval')
+    self.model = resnet_model.ResNet(self.args, mode='eval')
     self.loader = loader
 
     # session
@@ -41,24 +40,22 @@ class Evaluator(object):
 
   def restore_weights(self, log_dir):
 
-    # checkpoint file
-    ckpt_file = join(log_dir, 'model.ckpt')
 
     # look for ckpt to restore
     try:
       ckpt_state = tf.train.get_checkpoint_state(log_dir)
     except tf.errors.OutOfRangeError as e:
-      tf.logging.error('EVAL: Cannot restore checkpoint: %s', e)
+      print('EVAL: Cannot restore checkpoint: %s', e)
       return True
     if not (ckpt_state and ckpt_state.model_checkpoint_path):
-      tf.logging.info('EVAL: No model to eval yet at %s', log_dir)
+      print('EVAL: No model to eval yet at %s', log_dir)
       time.sleep(10)
       return True
 
     # restore the checkpoint
     var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('Sum/projvec')))
     saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
-    saver.restore(self.sess, ckpt_file)
+    saver.restore(self.sess, ckpt_state.model_checkpoint_path)
 
   def restore_weights_dropbox(self, pretrain_dir):
     logdir = utils.timenow()
@@ -81,8 +78,7 @@ class Evaluator(object):
     running_xent = running_tot = 0
     for batch_idx, (images, target) in enumerate(loader):
       # load batch
-      images = images.permute(0,2,3,1).numpy(); target = target.numpy()
-      target = np.eye(self.hps.num_classes)[target]
+      images, target = utils.cifar_torch_to_numpy(images, target, num_classes=self.args.num_classes)
       # run the model to get xent and precision
       (predictions, truth, xentPerExample, global_step) = self.sess.run(
         [self.model.predictions, self.model.labels, self.model.xentPerExample, self.model.global_step],
