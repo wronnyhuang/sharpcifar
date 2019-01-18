@@ -22,11 +22,12 @@ def evaluate_model(assignment, gpu, name):
              '-sigopt',
              '-gpu='+str(gpu),
              '-log_root='+name,
-             '-pretrain_dir=ckpt/hess-test1-nospec'
+             '-epoch_end=100',
+             '-pretrain_dir=ckpt/pre60k-100k'
              ]
   sysargv_plus = ['-' + k +'=' + str(v) for k,v in assignment.items()]
   command = ' '.join(sysargv+sysargv_plus)
-  if args.debug: command = command + ' -epoch_end=2'
+  if args.debug: command = command + ' -epoch_end=1'
   print(command)
   output = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
 
@@ -35,10 +36,10 @@ def evaluate_model(assignment, gpu, name):
   exptKey = open('/root/ckpt/'+name+'/comet_expt_key.txt', 'r').read()
   metricSummaries = cometapi.get_raw_metric_summaries(exptKey)
   metricSummaries = {b.pop('name'): b for b in metricSummaries}
-  value = metricSummaries['eval/xent']['valueMin'] # xent
-  # value = cometapi.get_metrics(exptKey)['eval/xent']['value'].iloc[-10:].median() # gen_gap
+  value = metricSummaries['eval/best_acc']['valueMax'] - .68 # maximize this metric
+  # value = cometapi.get_metrics(exptKey)['eval/acc']['value'].iloc[-10:].median() # minimize this metric
   value = float(value)
-  value = 1/value
+  # value = 1/value
   value = min(1e10, value)
   print('==> '+name+' | sigoptObservation=' + str(value))
   return value # optimization metric
@@ -46,10 +47,10 @@ def evaluate_model(assignment, gpu, name):
 api_key = 'FJUVRFEZUNYVIMTPCJLSGKOSDNSNTFSDITMBVMZRKZRRVREL'
 
 parameters = [
-              dict(name='lrn_rate', type='double', default_value=1e-1, bounds=dict(min=.2e-1, max=2e-1)),
-              dict(name='speccoef', type='double', default_value=1e-1, bounds=dict(min=1e-4, max=5e-1)),
-              dict(name='warmupPeriod', type='int', default_value=12, bounds=dict(min=5, max=50)),
-              dict(name='projvec_beta', type='double', default_value=.93, bounds=dict(min=0, max=.99)),
+              dict(name='lrn_rate', type='double', default_value=1e-1, bounds=dict(min=.5e-1, max=5e-1)),
+              dict(name='speccoef', type='double', default_value=1e-1, bounds=dict(min=.5e-4, max=5e-1)),
+              # dict(name='warmupPeriod', type='int', default_value=12, bounds=dict(min=5, max=50)),
+              # dict(name='projvec_beta', type='double', default_value=.93, bounds=dict(min=0, max=.99)),
               # dict(name='distrfrac', type='double', default_value=.6,  bounds=dict(min=.01, max=1)),
               # dict(name='distrstep', type='int', default_value=9000,  bounds=dict(min=5000, max=15000)),
               # dict(name='distrstep2', type='int', default_value=17000,  bounds=dict(min=15000, max=20000)),

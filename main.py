@@ -50,9 +50,8 @@ parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
 parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign ofhouthe spectral regularization term, negative if looking for sharp minima')
 parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
-parser.add_argument('-warmupStart', default=256, type=int)
 parser.add_argument('-warmupPeriod', default=20, type=int)
-parser.add_argument('-specreg_bn', default=True, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
+parser.add_argument('-specreg_bn', default=False, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
 parser.add_argument('-normalizer', default='filtnorm', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
 # load pretrained
@@ -84,9 +83,9 @@ def train():
 
   # start evaluation process
   popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
-  command_valid = 'python main.py -mode=eval ' + ' '.join(sys.argv[1:])
+  command_valid = 'python main.py -mode=eval ' + ' '.join(sys.argv[1:]) + ' &>> /root/ckpt/'+args.log_root+'/logeval.txt'
   valid = subprocess.Popen(command_valid, **popen_args)
-  print('EVAL: started validation from train process using command: ', command_valid)
+  print('EVAL: started validation from train process using command:', command_valid)
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
@@ -131,7 +130,7 @@ def train():
                      model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
 
         accumulator.accum(predictions, cleanimages, cleantarget, dirtyimages, dirtytarget)
-        scheduler.after_run(global_step, len(cleanloader))
+        scheduler.after_run(global_step, len(cleanloader), epoch)
 
         if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
@@ -164,7 +163,7 @@ def train():
 
         # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)
         accumulator.accum(predictions, cleanimages, cleantarget)
-        scheduler.after_run(global_step, len(cleanloader))
+        scheduler.after_run(global_step, len(cleanloader), epoch)
 
         if np.mod(global_step, 100)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
@@ -181,6 +180,14 @@ def train():
       metrics['clean/acc'], _, _ = accumulator.get_accs()
       experiment.log_metrics(metrics, step=global_step)
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
+
+      # restart evaluation process if it somehow died
+      print('TRAIN: Validation process returncode:', valid.returncode)
+      if valid.returncode != None:
+        valid.kill(); sleep(1)
+        valid = subprocess.Popen(command_valid, **popen_args)
+        print('===> Problem with validation process, new PID', valid.pid)
+
 
   # retrieve data from comet
   cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
@@ -205,27 +212,36 @@ def evaluate():
 
   # continuously evaluate until process is killed
   best_acc = 0.0
-  utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # download pretrained model
+  # utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # DEBUGGING ONLY; COMMENT OUT FOR TRAINING
   while True:
     metrics = {}
+
     # restore weights from file
     restoreError = evaluator.restore_weights(log_dir)
     if restoreError: print('no weights to restore'); sleep(1); continue
+
     # KEY LINE OF CODE
     xent, acc, global_step = evaluator.eval()
     best_acc = max(acc, best_acc)
+
     # evaluate hessian as well
-    val = corr_iter = 0
-    if not args.nohess:
-      val, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=3)
-      if 'projvec' in locals(): # compute correlation between projvec of different epochs
-        corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
-        metrics['hess/projvec_corr_period'] = corr_period
-      projvec = nextProjvec
+    val = corr_iter = corr_period = 0
+    # if not args.nohess:
+    #   val, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=1, num_classes=args.num_classes)
+    #   if 'projvec' in locals(): # compute correlation between projvec of different epochs
+    #     corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
+    #     metrics['hess/projvec_corr_period'] = corr_period
+    #   projvec = nextProjvec
+
     # log metrics
-    metrics['eval/acc'] = acc; metrics['eval/xent'] = xent; metrics['eval/best_acc'] = best_acc; metrics['hess/val'] = val; metrics['hess/projvec_corr_iter'] = corr_iter
+    metrics['eval/acc'] = acc
+    metrics['eval/xent'] = xent
+    metrics['eval/best_acc'] = best_acc
+    metrics['hess/val'] = val
+    metrics['hess/projvec_corr_iter'] = corr_iter
     experiment.log_metrics(metrics, step=global_step)
-    print('EVAL: loss: %.3f, acc: %.3f, best_acc: %.3f, val: %.3f, corr_iter: %.3f, global_step: %s, time: %s' % (xent, acc, best_acc, val, corr_iter, global_step, timenow()))
+    print('EVAL: loss: %.3f, acc: %.3f, best_acc: %.3f, val: %.3f, corr_iter: %.3f, corr_period: %.3f, global_step: %s, time: %s' %
+          (xent, acc, best_acc, val, corr_iter, corr_period, global_step, timenow()))
 
 
 if __name__ == '__main__':
@@ -235,6 +251,7 @@ if __name__ == '__main__':
   experiment.set_name(args.log_root)
   experiment.log_parameters(vars(args))
   experiment.log_other('hostmachine', hostname)
+  if args.log_root=='debug': experiment.log_other('debug', True);
 
   # hps = resnet_model.HParams(batch_size=args.batch_size,
   #                            num_classes=num_classes,

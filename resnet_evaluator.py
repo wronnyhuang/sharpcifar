@@ -40,7 +40,6 @@ class Evaluator(object):
 
   def restore_weights(self, log_dir):
 
-
     # look for ckpt to restore
     try:
       ckpt_state = tf.train.get_checkpoint_state(log_dir)
@@ -90,8 +89,6 @@ class Evaluator(object):
       predictions = np.argmax(predictions, axis=1)
       correct_prediction += np.sum(truth == predictions)
       total_prediction += predictions.shape[0]
-      # premature abortion
-      # if batch_idx > len(self.loader)/4: break
     # aggregate scores
     precision = 1.0 * correct_prediction / total_prediction
     xent = running_xent/running_tot

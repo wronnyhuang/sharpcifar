@@ -103,7 +103,7 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training_dirty=Fal
       # batchimages = batchimages.permute(0,2,3,1).numpy()
       # batchtarget = batchtarget.numpy()
       # batchtarget = np.eye(num_classes)[batchtarget]
-      batchimages, batchtarget = cifar_torch_to_numpy(batchimages, batchtarget)
+      batchimages, batchtarget = cifar_torch_to_numpy(batchimages, batchtarget, num_classes=num_classes)
 
       # accumulate hvp
       if is_training_dirty:
@@ -246,11 +246,14 @@ class Scheduler(object):
     self._lrn_rate = 0
     self.speccoef = args.speccoef_init
     self.args = args
+    self.global_step_init = None
 
   def after_run(self, global_step, steps_per_epoch):
+    if self.global_step_init == None: self.global_step_init = global_step
     epoch = float(global_step)/steps_per_epoch
+    epochRelative = float( (global_step-self.global_step_init) / steps_per_epoch )
     # warmup of spectral coefficient
-    self.speccoef = self.args.speccoef * np.clip( ( max(0, epoch - self.args.warmupStart) / self.args.warmupPeriod )**2, 0, 1)
+    self.speccoef = self.args.speccoef * np.clip( ( max(0, epochRelative) / self.args.warmupPeriod ), 0, 1)
     # warmup of learning rate
     if epoch < 102.4:
       self._lrn_rate = self.args.lrn_rate

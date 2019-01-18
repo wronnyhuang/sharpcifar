@@ -21,7 +21,7 @@ def _spec(net, xentPerExample, is_accum=True, nohess=False):
   if not net.args.specreg_bn: # don't include batch norm weights
     net.regularizable = []
     for var in tf.trainable_variables():
-      if var.op.name.find(r'DW') > 0:
+      if var.op.name.find('logit') > -1 or var.op.name.find(r'DW') > -1:
         net.regularizable.append(var)
     print('Number of regularizable weights: ' + str(utils.count_params(net.regularizable)))
   else:
@@ -56,7 +56,7 @@ def _spec(net, xentPerExample, is_accum=True, nohess=False):
   # get hessian vector product
   tstart = time.time()
   hessVecProd = tf.gradients(gradLoss, net.regularizable, projvec_mul_normvalues)
-  hessVecProd = [h*n for h,n in zip(hessVecProd, net.normvalues)]
+  # hessVecProd = [h*n for h,n in zip(hessVecProd, net.normvalues)]
   print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
 
   # create op to accumulate gradients
