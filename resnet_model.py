@@ -157,7 +157,7 @@ class ResNet(object):
         self.xent = tf.reduce_mean(self.xentPerExample)
 
     # add spectral radius calculations
-    self.valEager = specreg._spec(self, self.xentPerExample, self.mode=='eval', self.args.nohess)
+    self.valEager = specreg._spec(self, self.xentPerExample, self.mode=='eval', self.args.nohess, self.args.randvec)
 
     # add accuracy calculation
     truth = tf.argmax(self.labels, axis=1)

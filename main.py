@@ -34,6 +34,7 @@ parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
+parser.add_argument('-randvec', action='store_true')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
@@ -163,9 +164,9 @@ def train():
 
         # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)
         accumulator.accum(predictions, cleanimages, cleantarget)
-        scheduler.after_run(global_step, len(cleanloader), epoch)
+        scheduler.after_run(global_step, len(cleanloader))
 
-        if np.mod(global_step, 100)==0: # record metrics and save ckpt so evaluator can be up to date
+        if np.mod(global_step, 150)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
           metrics = {}
           metrics['train/val'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
@@ -252,23 +253,6 @@ if __name__ == '__main__':
   experiment.log_parameters(vars(args))
   experiment.log_other('hostmachine', hostname)
   if args.log_root=='debug': experiment.log_other('debug', True);
-
-  # hps = resnet_model.HParams(batch_size=args.batch_size,
-  #                            num_classes=num_classes,
-  #                            min_lrn_rate=0.0001,
-  #                            num_residual_units=args.num_resunits,
-  #                            resnet_width=args.resnet_width,
-  #                            use_bottleneck=False,
-  #                            weight_decay_rate=args.weight_decay,
-  #                            speccoef=args.speccoef,
-  #                            relu_leakiness=0.1,
-  #                            projvec_beta=args.projvec_beta,
-  #                            max_grad_norm=args.max_grad_norm,
-  #                            normalizer=args.normalizer,
-  #                            specreg_bn=args.specreg_bn,
-  #                            spec_sign=args.spec_sign,
-  #                            poison=args.poison,
-  #                            optimizer='mom')
 
   args.num_classes = 100 if args.cifar100 else 10
 

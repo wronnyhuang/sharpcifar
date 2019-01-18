@@ -9,7 +9,7 @@ from cometml_api import api as cometapi
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-name', default='unnamed-sigopt', type=str)
-parser.add_argument('-resume', action='store_true')
+parser.add_argument('-r', action='store_true')
 parser.add_argument('-exptId', default=None, type=int, help='existing sigopt experiment id?')
 parser.add_argument('-gpus', default=[0], type=int, nargs='+')
 parser.add_argument('-bw', default=None, type=int)
@@ -23,6 +23,7 @@ def evaluate_model(assignment, gpu, name):
              '-gpu='+str(gpu),
              '-log_root='+name,
              '-epoch_end=100',
+             '-cifar100=True',
              '-pretrain_dir=ckpt/pre60k-100k'
              ]
   sysargv_plus = ['-' + k +'=' + str(v) for k,v in assignment.items()]

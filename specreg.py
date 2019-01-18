@@ -5,7 +5,7 @@ import time
 import sys
 np.random.seed(1234)
 
-def _spec(net, xentPerExample, is_accum=True, nohess=False):
+def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
   """returns principal eig of the hessian"""
 
   if nohess:
@@ -21,7 +21,7 @@ def _spec(net, xentPerExample, is_accum=True, nohess=False):
   if not net.args.specreg_bn: # don't include batch norm weights
     net.regularizable = []
     for var in tf.trainable_variables():
-      if var.op.name.find('logit') > -1 or var.op.name.find(r'DW') > -1:
+      if var.op.name.find('logit/dense/kernel') > -1 or var.op.name.find(r'DW') > -1:
         net.regularizable.append(var)
     print('Number of regularizable weights: ' + str(utils.count_params(net.regularizable)))
   else:
@@ -59,28 +59,36 @@ def _spec(net, xentPerExample, is_accum=True, nohess=False):
   # hessVecProd = [h*n for h,n in zip(hessVecProd, net.normvalues)]
   print('Built hessVecProd: ' + str(time.time() - tstart) + ' s')
 
-  # create op to accumulate gradients
-  with tf.variable_scope('accum'):
-    hessvecprodAccum = [tf.Variable(tf.zeros_like(h), trainable=False, name=h.op.name) for h in hessVecProd]
-    batchsizeAccum = tf.Variable(0, trainable=False, name='batchsizeAccum')
-    net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum] + [batchsizeAccum.assign(0)]
-    net.accum_op = [a.assign_add(g) for a,g in zip(hessvecprodAccum, hessVecProd)] + [batchsizeAccum.assign_add(batchsize)]
-
-  # calculate principle eigenvalues
-  net.valtotEager = utils.list2dotprod(net.projvec, hessVecProd)
-  net.bzEager = tf.to_float(batchsize)
-  net.valEager = net.valtotEager / net.bzEager
-  net.valtotAccum = utils.list2dotprod(net.projvec, hessvecprodAccum)
-  net.bzAccum = tf.to_float(batchsizeAccum)
-  net.valAccum = net.valtotAccum / net.bzAccum
-
-  # next projection vector definition
+  # build graph for full-batch hessian calculations which require accum ops and storage variables (for validation)
   if is_accum:
+
+    # create op to accumulate gradients
+    with tf.variable_scope('accum'):
+      hessvecprodAccum = [tf.Variable(tf.zeros_like(h), trainable=False, name=h.op.name) for h in hessVecProd]
+      batchsizeAccum = tf.Variable(0, trainable=False, name='batchsizeAccum')
+      net.zero_op = [a.assign(tf.zeros_like(a)) for a in hessvecprodAccum] + [batchsizeAccum.assign(0)]
+      net.accum_op = [a.assign_add(g) for a,g in zip(hessvecprodAccum, hessVecProd)] + [batchsizeAccum.assign_add(batchsize)]
+
+    # compute the projected projection vector using accumulated hvps
     nextProjvec = compute_nextProjvec(net.projvec, hessvecprodAccum, net.projvec_beta)
     print('nextProjvec using accumed hvp')
+
+    # hooks for total eigenvalue, batch size, and eigenvalue
+    net.valtotAccum = utils.list2dotprod(net.projvec, hessvecprodAccum)
+    net.bzAccum = tf.to_float(batchsizeAccum)
+    net.valAccum = net.valtotAccum / net.bzAccum
+
+  # build graph for on-the-fly per-batch hessian calcuations (for training)
   else:
-    nextProjvec = compute_nextProjvec(net.projvec, hessVecProd, net.projvec_beta)
+
+    # compute the projected projection vector using instantaneous hvp
+    nextProjvec = compute_nextProjvec(net.projvec, hessVecProd, net.projvec_beta, randvec=randvec)
     print('nextProjvec using instant hvp')
+
+    # hooks for total eigenvalue, batch size, and eigenvalue
+    net.valtotEager = utils.list2dotprod(net.projvec, hessVecProd)
+    net.bzEager = tf.to_float(batchsize)
+    net.valEager = net.valtotEager / net.bzEager
 
   # dotprod and euclidean distance of new projection vector from previous
   net.projvec_corr = utils.list2dotprod(nextProjvec, net.projvec)
@@ -92,11 +100,18 @@ def _spec(net, xentPerExample, is_accum=True, nohess=False):
 
   return net.valEager
 
-def compute_nextProjvec(projvec, hvp, projvec_beta):
+def compute_nextProjvec(projvec, hvp, projvec_beta, randvec=False):
   '''get the next projvec'''
-  normHv = utils.list2norm(hvp)
-  unitHv = [tf.divide(h, normHv) for h in hvp]
-  nextProjvec = [tf.add(h, tf.multiply(p, projvec_beta)) for h,p in zip(unitHv, projvec)]
+
+  # make the vector
+  if randvec:
+    nextProjvec = [tf.random_normal(shape=p.get_shape()) for p in projvec]
+  else:
+    normHv = utils.list2norm(hvp)
+    unitHv = [tf.divide(h, normHv) for h in hvp]
+    nextProjvec = [tf.add(h, tf.multiply(p, projvec_beta)) for h,p in zip(unitHv, projvec)]
+
+  # normalize the vector
   normNextPv = utils.list2norm(nextProjvec)
   nextProjvec = [tf.divide(p, normNextPv) for p in nextProjvec]
   return nextProjvec
