@@ -157,7 +157,7 @@ class ResNet(object):
         self.xent = tf.reduce_mean(self.xentPerExample)
 
     # add spectral radius calculations
-    self.valEager = specreg._spec(self, self.xentPerExample, self.mode=='eval', self.args.nohess, self.args.randvec)
+    specreg._spec(self, self.xentPerExample, self.mode=='eval', self.args.nohess, self.args.randvec)
 
     # add accuracy calculation
     truth = tf.argmax(self.labels, axis=1)
@@ -167,14 +167,17 @@ class ResNet(object):
   def _build_train_op(self):
     """Build training specific ops for the graph."""
 
-    # add regularization terms to xent to form loss function
-    self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
-
-    # do we want to include hessian term in the loss, and subsequently backprop thru the hessian
-    if self.mode=='train' and not self.args.poison and not self.args.nohess:
-      self.loss = self.loss + self.args.spec_sign * self.speccoef * self.valEager    # build gradients for training
+    # build gradients for the regular loss with weight decay but no spectral radius
     trainable_variables = tf.trainable_variables()
-    tstart = time.time(); grads = tf.gradients(self.loss, trainable_variables); print('Built grads: '+str(time.time()-tstart))
+    tstart = time.time(); grad_nonspec = tf.gradients(self.loss, trainable_variables); print('Built grad_nonspec: '+str(time.time()-tstart))
+
+    # build gradients for spectral radius
+    self.loss_nonspec = self.xent + self._decay() #+ specreg._spec(self, self.xent)
+    if self.mode=='train' and not self.args.poison and not self.args.nohess:
+      self.loss_spec = self.args.spec_sign * self.speccoef * self.valEager
+      tstart = time.time()
+      grad_spec = tf.gradients(self.loss_spec, trainable_variables)
+      print('Built grad_spec:', str(time.time()-tstart))
 
     # clip gradient by norm
     grads, self.grad_norm = tf.clip_by_global_norm(grads, clip_norm=self.args.max_grad_norm)

@@ -40,6 +40,8 @@ class Evaluator(object):
 
   def restore_weights(self, log_dir):
 
+    ckpt_file = join(log_dir, 'model.ckpt')
+
     # look for ckpt to restore
     try:
       ckpt_state = tf.train.get_checkpoint_state(log_dir)
@@ -54,13 +56,13 @@ class Evaluator(object):
     # restore the checkpoint
     var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('Sum/projvec')))
     saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
-    saver.restore(self.sess, ckpt_state.model_checkpoint_path)
+    saver.restore(self.sess, ckpt_file)
 
   def restore_weights_dropbox(self, pretrain_dir):
     logdir = utils.timenow()
-    utils.download_pretrained(log_dir='/root/ckpt/'+logdir, pretrain_dir=pretrain_dir)
-    self.restore_weights('/root/ckpt/'+logdir)
-    shutil.rmtree('/root/ckpt/'+logdir)
+    utils.download_pretrained(log_dir=join(args.bin_path, 'ckpt', logdir), pretrain_dir=pretrain_dir)
+    self.restore_weights(join(args.bin_path, 'ckpt', logdir))
+    shutil.rmtree(join(args.bin_path, 'ckpt', logdir))
     print('Ckpt restored from', pretrain_dir)
 
   def assign_weights(self, weights):

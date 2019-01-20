@@ -31,6 +31,8 @@ parser.add_argument('-cifar100', action='store_true')
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
 parser.add_argument('-cpu_eval', action='store_true', help='use cpu for eval, overrides whatever is on --gpu')
 parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
+parser.add_argument('-nopurge', action='store_true')
+parser.add_argument('-reusekey', action='store_true')
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
@@ -53,22 +55,21 @@ parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign of
 parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
 parser.add_argument('-warmupPeriod', default=20, type=int)
 parser.add_argument('-specreg_bn', default=False, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
-parser.add_argument('-normalizer', default='filtnorm', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
+parser.add_argument('-normalizer', default='layernormdev', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
-parser.add_argument('-purge', action='store_true')
 # general helpers
-parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+parser.add_argument('-max_grad_norm', default=4, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
 args = parser.parse_args()
 log_dir = join(args.ckpt_root, args.log_root)
-if args.purge and args.mode=='train' and exists(log_dir): rmtree(log_dir)
+if not args.nopurge and args.mode=='train' and exists(log_dir): rmtree(log_dir)
 os.makedirs(log_dir, exist_ok=True)
 
 # comet stuff for logging
-if not exists(join(log_dir, 'comet_expt_key.txt')):
+if ( args.mode=='train' and not args.reusekey ) or not exists(join(log_dir, 'comet_expt_key.txt')):
   projname = 'poisoncifar' if args.poison else 'hesscifar'
   projname = projname + '-sigopt' if args.sigopt else projname
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
@@ -108,7 +109,7 @@ def train():
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
     print('TRAIN: No pretrained model. Initialized from random')
   else:
-    saver.restore(sess, ckpt_state.model_checkpoint_path)
+    saver.restore(sess, ckpt_file)
     print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
 
   scheduler = Scheduler(args)
@@ -145,7 +146,7 @@ def train():
       metrics = {}
       metrics['clean/acc'], metrics['dirty/acc'], metrics['clean_minus_dirty'] = accumulator.get_accs()
       experiment.log_metrics(metrics, step=global_step)
-      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'], 'dirty/acc', metrics['dirty/acc'])
+      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clea.,n/acc'], 'dirty/acc', metrics['dirty/acc'])
 
     else: # use hessian
 
@@ -212,7 +213,7 @@ def evaluate():
   print('===================> EVAL: SESSION STARTED at '+timenow()+' on CUDA_VISIBLE_DEVICES='+os.environ['CUDA_VISIBLE_DEVICES'])
 
   # continuously evaluate until process is killed
-  best_acc = 0.0
+  best_acc = worst_acc = 0.0
   # utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # DEBUGGING ONLY; COMMENT OUT FOR TRAINING
   while True:
     metrics = {}
@@ -224,6 +225,7 @@ def evaluate():
     # KEY LINE OF CODE
     xent, acc, global_step = evaluator.eval()
     best_acc = max(acc, best_acc)
+    worst_acc = min(acc, worst_acc)
 
     # evaluate hessian as well
     val = corr_iter = corr_period = 0
@@ -238,6 +240,7 @@ def evaluate():
     metrics['eval/acc'] = acc
     metrics['eval/xent'] = xent
     metrics['eval/best_acc'] = best_acc
+    metrics['eval/worst_acc'] = worst_acc
     metrics['hess/val'] = val
     metrics['hess/projvec_corr_iter'] = corr_iter
     experiment.log_metrics(metrics, step=global_step)
@@ -253,6 +256,7 @@ if __name__ == '__main__':
   experiment.log_parameters(vars(args))
   experiment.log_other('hostmachine', hostname)
   if args.log_root=='debug': experiment.log_other('debug', True);
+  experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
 
   args.num_classes = 100 if args.cifar100 else 10
 

@@ -98,8 +98,6 @@ def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
     with tf.variable_scope('projvec_op'):
       net.projvec_op = [tf.assign(p,n) for p,n in zip(net.projvec, nextProjvec)]
 
-  return net.valEager
-
 def compute_nextProjvec(projvec, hvp, projvec_beta, randvec=False):
   '''get the next projvec'''
 
