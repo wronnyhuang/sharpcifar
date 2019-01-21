@@ -84,7 +84,7 @@ def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
 
     # compute the projected projection vector using instantaneous hvp
     nextProjvec = compute_nextProjvec(net.projvec, hessVecProd, net.projvec_beta, randvec=randvec)
-    print('nextProjvec using instant hvp')
+    print('nextProjvec using instant hvp and randvec is', randvec)
 
     # hooks for total eigenvalue, batch size, and eigenvalue
     net.valtotEager = utils.list2dotprod(net.projvec, hessVecProd)

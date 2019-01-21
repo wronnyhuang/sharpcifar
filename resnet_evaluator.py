@@ -54,7 +54,7 @@ class Evaluator(object):
       return True
 
     # restore the checkpoint
-    var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('Sum/projvec')))
+    var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('projvec')))
     saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
     saver.restore(self.sess, ckpt_file)
 

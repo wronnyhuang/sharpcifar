@@ -160,8 +160,8 @@ def train():
         cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget, args.num_classes)
 
         # run the graph
-        corrGradsSpec, valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
-          sess.run([model.corrGradsSpec, model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
+        gradsSpecCorr, valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
+          sess.run([model.gradsSpecCorr, model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
             model.loss, model.predictions, model.precision, model.xent, model.grad_norm, model.valEager, model.projvec_corr],
             feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: cleanimages, model.labels: cleantarget,
                        model.speccoef: scheduler.speccoef, model.projvec_beta: args.projvec_beta})
@@ -178,7 +178,7 @@ def train():
             valEager, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
-          print('corrGradsSpec', corrGradsSpec)
+          if gradsSpecCorr != None: print('gradsSpecCorr:', gradsSpecCorr)
           if 'timeold' in locals(): experiment.log_metric('time_per_step', (time()-timeold)/100);
           timeold = time()
 
@@ -263,6 +263,7 @@ if __name__ == '__main__':
   if args.log_root=='debug': experiment.log_other('debug', True);
   experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
 
+  if args.randvec: args.spec_sign = -1
   args.num_classes = 100 if args.cifar100 else 10
 
   if args.mode == 'train':

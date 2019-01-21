@@ -177,6 +177,8 @@ class ResNet(object):
     print('Built grads: ' + str(time.time() - tstart))
 
     # build gradients for spectral radius (long operation)
+    gradsSpecList = []
+    self.gradsSpecCorr= []
     if self.mode=='train' and not self.args.poison and not self.args.nohess:
 
       # build N computations of eigenvalue gradient, each either diff rand direction
@@ -192,14 +194,19 @@ class ResNet(object):
         # loss associated withe spectral radius
         self.loss_spec = self.args.spec_sign * self.speccoef * self.valEager
 
-        # compute the gradient wrt spectral radius
+        # compute the gradient wrt spectral radius and clip
         tstart = time.time()
         gradsSpec = tf.gradients(self.loss_spec, trainable_variables)
         gradsSpec, self.grad_norm = tf.clip_by_global_norm(gradsSpec, clip_norm=self.args.max_grad_norm)
-        if i==n_grads_spec-1: self.corrGradsSpec = utils.list2corr(gradsSpecAccum, gradsSpec)
+
+        # accumulate gradients piecewise additively
         if i==0: gradsSpecAccum = gradsSpec
         else: gradsSpecAccum = [a + g for a,g in zip(gradsSpecAccum, gradsSpec)]
         print('Built gradSpec:', str(time.time()-tstart))
+
+        # record intragradient correlations
+        self.gradsSpecCorr.extend([utils.list2corr(gradsSpec, g) for g in gradsSpecList])
+        gradsSpecList = gradsSpecList + [gradsSpec]
 
       self.valEager = valEagerAccum / n_grads_spec
       grads = [ g + a / n_grads_spec for g, a in zip(grads, gradsSpecAccum) ]
