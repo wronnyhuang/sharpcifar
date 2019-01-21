@@ -28,6 +28,7 @@ import tensorflow.keras.backend as K
 import six
 import time
 import specreg
+import utils
 
 from tensorflow.python.training import moving_averages
 
@@ -78,8 +79,7 @@ class ResNet(object):
 
     start = time.time()
     self._build_model()
-    if self.mode == 'train':
-      self._build_train_op()
+    self._build_train_op()
     print('Graph built in '+str(time.time()-start)+' sec')
     time.sleep(1)
 
@@ -156,9 +156,6 @@ class ResNet(object):
             logits=logits, labels=self.labels)
         self.xent = tf.reduce_mean(self.xentPerExample)
 
-    # add spectral radius calculations
-    specreg._spec(self, self.xentPerExample, self.mode=='eval', self.args.nohess, self.args.randvec)
-
     # add accuracy calculation
     truth = tf.argmax(self.labels, axis=1)
     pred = tf.argmax(self.predictions, axis=1)
@@ -167,29 +164,54 @@ class ResNet(object):
   def _build_train_op(self):
     """Build training specific ops for the graph."""
 
+    if self.mode=='eval':
+      # add spectral radius calculations
+      specreg._spec(self, self.xentPerExample, True, self.args.nohess, self.args.randvec)
+      return
+
     # build gradients for the regular loss with weight decay but no spectral radius
     trainable_variables = tf.trainable_variables()
-    tstart = time.time(); grad_nonspec = tf.gradients(self.loss, trainable_variables); print('Built grad_nonspec: '+str(time.time()-tstart))
+    self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
+    tstart = time.time()
+    grads = tf.gradients(self.loss, trainable_variables)
+    print('Built grads: ' + str(time.time() - tstart))
 
-    # build gradients for spectral radius
-    self.loss_nonspec = self.xent + self._decay() #+ specreg._spec(self, self.xent)
+    # build gradients for spectral radius (long operation)
     if self.mode=='train' and not self.args.poison and not self.args.nohess:
-      self.loss_spec = self.args.spec_sign * self.speccoef * self.valEager
-      tstart = time.time()
-      grad_spec = tf.gradients(self.loss_spec, trainable_variables)
-      print('Built grad_spec:', str(time.time()-tstart))
 
-    # clip gradient by norm
-    grads, self.grad_norm = tf.clip_by_global_norm(grads, clip_norm=self.args.max_grad_norm)
+      # build N computations of eigenvalue gradient, each either diff rand direction
+      n_grads_spec = self.args.n_grads_spec if self.args.randvec else 1
+      valEagerAccum = 0
+      for i in range(n_grads_spec):
 
+        # compute spectral radius
+        print('=> Spectral radius graph')
+        specreg._spec(self, self.xentPerExample, False, self.args.nohess, self.args.randvec)
+        valEagerAccum = valEagerAccum + self.valEager
+
+        # loss associated withe spectral radius
+        self.loss_spec = self.args.spec_sign * self.speccoef * self.valEager
+
+        # compute the gradient wrt spectral radius
+        tstart = time.time()
+        gradsSpec = tf.gradients(self.loss_spec, trainable_variables)
+        gradsSpec, self.grad_norm = tf.clip_by_global_norm(gradsSpec, clip_norm=self.args.max_grad_norm)
+        if i==n_grads_spec-1: self.corrGradsSpec = utils.list2corr(gradsSpecAccum, gradsSpec)
+        if i==0: gradsSpecAccum = gradsSpec
+        else: gradsSpecAccum = [a + g for a,g in zip(gradsSpecAccum, gradsSpec)]
+        print('Built gradSpec:', str(time.time()-tstart))
+
+      self.valEager = valEagerAccum / n_grads_spec
+      grads = [ g + a / n_grads_spec for g, a in zip(grads, gradsSpecAccum) ]
+
+    # build optimizer apply_op
     if self.optimizer == 'sgd':
       optimizer = tf.train.GradientDescentOptimizer(self.lrn_rate)
     elif self.optimizer == 'mom':
       optimizer = tf.train.MomentumOptimizer(self.lrn_rate, self.momentum)
-
     apply_op = optimizer.apply_gradients(
-        zip(grads, trainable_variables),
-        global_step=self.global_step, name='train_step')
+      zip(grads, trainable_variables),
+      global_step=self.global_step, name='train_step')
 
     train_ops = [apply_op] + self._extra_train_ops
     self.train_op = tf.group(*train_ops)
