@@ -6,7 +6,7 @@ import os
 
 torch.manual_seed(1234)
 
-def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False):
+def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=True):
   '''return loaders for cifar'''
 
   transform_train = transforms.Compose([
@@ -19,6 +19,7 @@ def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=Fals
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
   ])
+  if noaugment: transform_train = transform_test
 
   cifar_dataset = torchvision.datasets.CIFAR100 if cifar100 else torchvision.datasets.CIFAR10
 

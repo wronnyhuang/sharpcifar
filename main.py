@@ -37,6 +37,7 @@ parser.add_argument('-poison', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
+parser.add_argument('-noaugment', action='store_true')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
@@ -47,7 +48,6 @@ parser.add_argument('-resnet_width', default=1, type=int, help='Multiplier of th
 parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learning rate to use for training')
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
 parser.add_argument('-weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
-parser.add_argument('-augment', default=True, type=bool, help='use data augmentation.')
 parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
 # specreg stuff
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
@@ -62,7 +62,7 @@ parser.add_argument('-n_grads_spec', default=1, type=int)
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
 # general helpers
-parser.add_argument('-max_grad_norm', default=4, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
 args = parser.parse_args()
 log_dir = join(args.ckpt_root, args.log_root)
@@ -92,7 +92,7 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100)
+  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
   model = resnet_model.ResNet(args, args.mode)
 
   # initialize session
@@ -140,8 +140,8 @@ def train():
         if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
           metrics = {}
-          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
-            scheduler._lrn_rate, acc, xent, grad_norm
+          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'], metrics['globalstep'] = \
+            scheduler._lrn_rate, acc, xent, grad_norm, global_step
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
 
