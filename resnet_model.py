@@ -171,14 +171,15 @@ class ResNet(object):
 
     # build gradients for the regular loss with weight decay but no spectral radius
     trainable_variables = tf.trainable_variables()
-    self.loss = self.xent + self._decay() #+ specreg._spec(self, self.xent)
+    self.loss_orig = self.xent + self._decay() #+ specreg._spec(self, self.xent)
     tstart = time.time()
-    grads = tf.gradients(self.loss, trainable_variables)
+    grads = tf.gradients(self.loss_orig, trainable_variables)
     print('Built grads: ' + str(time.time() - tstart))
 
     # build gradients for spectral radius (long operation)
     gradsSpecList = []
     self.gradsSpecCorr= []
+    self.loss = self.loss_orig
     if self.mode=='train' and not self.args.poison and not self.args.nohess:
 
       # build N computations of eigenvalue gradient, each either diff rand direction
@@ -192,11 +193,19 @@ class ResNet(object):
         valEagerAccum = valEagerAccum + self.valEager
 
         # loss associated withe spectral radius
-        self.loss_spec = self.args.spec_sign * self.speccoef * self.valEager
+        # loss_spec = self.args.spec_sign * self.speccoef * self.valEager
+        if self.args.spec_sign == -1:
+          # rcTimeConstant = .3/np.log(.5)
+          # loss_spec = self.speccoef * tf.exp(-self.valEager/rcTimeConstant)
+          # print('using exp loss')
+          rcTimeConstant = .3 / np.exp(-.5)
+          loss_spec = self.speccoef * -tf.log( tf.maximum( 1e-8, self.valEager / rcTimeConstant ) )
+          print('using log loss')
+        self.loss = self.loss + loss_spec / n_grads_spec
 
         # compute the gradient wrt spectral radius and clip
         tstart = time.time()
-        gradsSpec = tf.gradients(self.loss_spec, trainable_variables)
+        gradsSpec = tf.gradients(loss_spec, trainable_variables)
         gradsSpec, self.grad_norm = tf.clip_by_global_norm(gradsSpec, clip_norm=self.args.max_grad_norm)
 
         # accumulate gradients piecewise additively

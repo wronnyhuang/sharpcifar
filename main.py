@@ -140,7 +140,8 @@ def train():
         if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
           metrics = {}
-          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'], metrics['globalstep'] = \
+          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'],\
+            metrics['train/grad_norm'], metrics['globalstep'] = \
             scheduler._lrn_rate, acc, xent, grad_norm, global_step
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
@@ -178,7 +179,9 @@ def train():
             valEager, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
-          if gradsSpecCorr != None: print('gradsSpecCorr:', gradsSpecCorr)
+          if gradsSpecCorr != None:
+            print('gradsSpecCorr:', gradsSpecCorr)
+            experiment.log_metric('gradsSpecCorrMean', sum(gradsSpecCorr)/float(len(gradsSpecCorr)), global_step)
           if 'timeold' in locals(): experiment.log_metric('time_per_step', (time()-timeold)/100);
           timeold = time()
 
