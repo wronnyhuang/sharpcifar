@@ -20,12 +20,7 @@ from glob import glob
 from shutil import rmtree
 import socket
 parser = argparse.ArgumentParser()
-# file names
-parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
-parser.add_argument('-ckpt_root', default='/root/ckpt', type=str, help='Parents directory of log_root')
-parser.add_argument('-bin_path', default='/root/bin', type=str, help='bin: directory of helpful scripts')
-parser.add_argument('-cifar100', action='store_true')
-# meta
+# options
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
 parser.add_argument('-gpu_eval', action='store_true')
 parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
@@ -35,9 +30,11 @@ parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
 parser.add_argument('-noaugment', action='store_true')
-# poison data
-parser.add_argument('-nodirty', action='store_true')
-parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
+# file names
+parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
+parser.add_argument('-ckpt_root', default='/root/ckpt', type=str, help='Parents directory of log_root')
+parser.add_argument('-bin_path', default='/root/bin', type=str, help='bin: directory of helpful scripts')
+parser.add_argument('-cifar100', action='store_true')
 # network parameters
 parser.add_argument('-num_resunits', default=3, type=int, help='Number of residual units n. There are 6*n+2 layers')
 parser.add_argument('-resnet_width', default=1, type=int, help='Multiplier of the width of hidden layers. Base is (16,32,64)')
@@ -46,7 +43,11 @@ parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learnin
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
 parser.add_argument('-weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
 parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
-# specreg stuff
+parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+# poison data
+parser.add_argument('-nodirty', action='store_true')
+parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
+# hessian regularization
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
 parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign ofhouthe spectral regularization term, negative if looking for sharp minima')
 parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
@@ -58,9 +59,6 @@ parser.add_argument('-n_grads_spec', default=1, type=int)
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
-# general helpers
-parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
-parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
 
 def train():
 
