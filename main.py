@@ -1,5 +1,4 @@
-# import comet_ml in the top of your file
-from comet_ml import Experiment, ExistingExperiment
+# import comet_ml in the top of your filefrom comet_ml import Experiment, ExistingExperiment
 import tensorflow as tf
 import os
 from os.path import join, basename, exists
@@ -9,7 +8,6 @@ from time import time, sleep
 from datetime import datetime
 import six
 import numpy as np
-import cifar_input
 import resnet_model
 import utils
 from utils import timenow, Scheduler, Accumulator
@@ -19,8 +17,8 @@ from resnet_evaluator import Evaluator
 import subprocess
 from subprocess import PIPE, STDOUT
 from glob import glob
-from del_old_ckpt import _del_old_ckpt
 from shutil import rmtree
+import socket
 parser = argparse.ArgumentParser()
 # file names
 parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
@@ -31,8 +29,7 @@ parser.add_argument('-cifar100', action='store_true')
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
 parser.add_argument('-gpu_eval', action='store_true')
 parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
-parser.add_argument('-nopurge', action='store_true')
-parser.add_argument('-reusekey', action='store_true')
+parser.add_argument('-resume', action='store_true') # use this if resuming training
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
@@ -64,23 +61,6 @@ parser.add_argument('-pretrain_dir', default=None, type=str, help='remote direct
 # general helpers
 parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
-args = parser.parse_args()
-log_dir = join(args.ckpt_root, args.log_root)
-if not args.nopurge and args.mode=='train' and exists(log_dir): rmtree(log_dir)
-os.makedirs(log_dir, exist_ok=True)
-
-# comet stuff for logging
-if ( args.mode=='train' and not args.reusekey ) or not exists(join(log_dir, 'comet_expt_key.txt')):
-  projname = 'poisoncifar' if args.poison else 'hesscifar'
-  projname = projname + '-sigopt' if args.sigopt else projname
-  experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-                          project_name=projname, workspace="wronnyhuang")
-  os.makedirs(log_dir, exist_ok=True)
-  with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
-    f.write(experiment.get_key())
-else:
-  with open(join(log_dir, 'comet_expt_key.txt'), 'r') as f: comet_key = f.read()
-  experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
 
 def train():
 
@@ -92,7 +72,7 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
+  cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
   model = resnet_model.ResNet(args, args.mode)
 
   # initialize session
@@ -105,7 +85,6 @@ def train():
   ckpt_file = join(log_dir, 'model.ckpt')
   ckpt_state = tf.train.get_checkpoint_state(log_dir)
   var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('projvec')))
-  # var_list = [tf.trainable_variables()] + [tf.train.get_global_step()]
   saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
   sess.run(tf.global_variables_initializer())
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
@@ -191,12 +170,12 @@ def train():
       experiment.log_metrics(metrics, step=global_step)
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
 
-      # restart evaluation process if it somehow died
-      print('TRAIN: Validation process returncode:', valid.returncode)
-      if valid.returncode != None:
-        valid.kill(); sleep(1)
-        valid = subprocess.Popen(command_valid, **popen_args)
-        print('===> Problem with validation process, new PID', valid.pid)
+    # restart evaluation process if it somehow died or restart every n epoch
+    print('TRAIN: Validation process returncode:', valid.returncode)
+    if valid.returncode != None or np.mod(epoch, 20):
+      valid.kill(); sleep(1)
+      valid = subprocess.Popen(command_valid, **popen_args)
+      print('===> Restarted validation process, new PID', valid.pid)
 
 
   # retrieve data from comet
@@ -258,17 +237,47 @@ def evaluate():
 
 if __name__ == '__main__':
 
-  hostname = open('/root/misc/hostname.log').read()
-  print('====================> HOST: docker @ '+hostname)
-  experiment.set_name(args.log_root)
-  experiment.log_parameters(vars(args))
-  experiment.log_other('hostmachine', hostname)
-  if args.log_root=='debug': experiment.log_other('debug', True);
-  experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
+  # parse arg
+  args = parser.parse_args()
 
+  # make log directory
+  log_dir = join(args.ckpt_root, args.log_root)
+  if not args.resume and args.mode=='train' and exists(log_dir): rmtree(log_dir)
+  os.makedirs(log_dir, exist_ok=True)
+
+  # comet stuff for logging
+  if ( args.mode=='train' and not args.resume ) or not exists(join(log_dir, 'comet_expt_key.txt')):
+    projname = 'poisoncifar' if args.poison else 'hesscifar'
+    projname = projname + '-sigopt' if args.sigopt else projname
+    experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
+                            project_name=projname, workspace="wronnyhuang")
+    with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
+      f.write(experiment.get_key())
+  else:
+    with open(join(log_dir, 'comet_expt_key.txt'), 'r') as f: comet_key = f.read()
+    experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
+
+  # log host name
+  hostlog = '/root/misc/hostname.log'
+  if exists(hostlog): hostname = 'docker @ '+open(hostlog).read()
+  else: hostname = socket.gethostname()
+  print('====================> HOST: '+hostname)
+
+  # log basic hyper params
+  experiment.set_name(args.log_root)
+  experiment.log_other('hostmachine', hostname)
+  experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
+  if args.log_root=='debug': experiment.log_other('debug', True);
+
+  # programmatically modify args
+  if args.resume: args.pretrain_dir = args.pretrain_url = None # dont load pretrained if resuming
   if args.randvec: args.spec_sign = -1
   args.num_classes = 100 if args.cifar100 else 10
 
+  # save args to comet
+  experiment.log_parameters(vars(args))
+
+  # start train/eval
   if args.mode == 'train':
     try:
       train()
