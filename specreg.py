@@ -11,7 +11,7 @@ def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
   if nohess:
     net.valtotEager = net.bzEager = net.valEager = net.valtotAccum = net.bzAccum = net.valAccum = tf.constant(0, tf.float32)
     net.projvec = net.projvec_op = net.projvec_corr = tf.constant(0, tf.float32)
-    return net.valEager
+    return
 
   batchsize = tf.shape(xentPerExample)[0]
   xent = tf.reduce_sum(xentPerExample)
@@ -34,7 +34,8 @@ def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
   projvec_init = [p/magnitude for p in projvec_init]
 
   # projection vector tensor variable
-  with tf.variable_scope(xent.op.name+'/projvec'):
+  net.count = net.count + 1 if hasattr(net, 'count') else 0
+  with tf.variable_scope('projvec/'+str(net.count)):
     net.projvec = [tf.get_variable(name=r.op.name, dtype=tf.float32, shape=r.get_shape(),
                                    trainable=False, initializer=tf.constant_initializer(p))
                    for r,p in zip(net.regularizable, projvec_init)]
@@ -83,7 +84,7 @@ def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
 
     # compute the projected projection vector using instantaneous hvp
     nextProjvec = compute_nextProjvec(net.projvec, hessVecProd, net.projvec_beta, randvec=randvec)
-    print('nextProjvec using instant hvp')
+    print('nextProjvec using instant hvp and randvec is', randvec)
 
     # hooks for total eigenvalue, batch size, and eigenvalue
     net.valtotEager = utils.list2dotprod(net.projvec, hessVecProd)

@@ -29,7 +29,7 @@ parser.add_argument('-bin_path', default='/root/bin', type=str, help='bin: direc
 parser.add_argument('-cifar100', action='store_true')
 # meta
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
-parser.add_argument('-cpu_eval', action='store_true', help='use cpu for eval, overrides whatever is on --gpu')
+parser.add_argument('-gpu_eval', action='store_true')
 parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
 parser.add_argument('-nopurge', action='store_true')
 parser.add_argument('-reusekey', action='store_true')
@@ -37,6 +37,7 @@ parser.add_argument('-poison', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
+parser.add_argument('-noaugment', action='store_true')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
@@ -47,7 +48,6 @@ parser.add_argument('-resnet_width', default=1, type=int, help='Multiplier of th
 parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learning rate to use for training')
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
 parser.add_argument('-weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
-parser.add_argument('-augment', default=True, type=bool, help='use data augmentation.')
 parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
 # specreg stuff
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
@@ -57,11 +57,12 @@ parser.add_argument('-warmupPeriod', default=20, type=int)
 parser.add_argument('-specreg_bn', default=False, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
 parser.add_argument('-normalizer', default='layernormdev', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
+parser.add_argument('-n_grads_spec', default=1, type=int)
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
 # general helpers
-parser.add_argument('-max_grad_norm', default=4, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 parser.add_argument('-image_size', default=32, type=str, help='Image side length.')
 args = parser.parse_args()
 log_dir = join(args.ckpt_root, args.log_root)
@@ -91,7 +92,7 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100)
+  cleanloader, dirtyloader, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
   model = resnet_model.ResNet(args, args.mode)
 
   # initialize session
@@ -103,7 +104,8 @@ def train():
   utils.download_pretrained(log_dir, pretrain_dir=args.pretrain_dir) # download pretrained model
   ckpt_file = join(log_dir, 'model.ckpt')
   ckpt_state = tf.train.get_checkpoint_state(log_dir)
-  var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('Sum/projvec')))
+  var_list = list(set(tf.global_variables())-set(tf.global_variables('accum'))-set(tf.global_variables('projvec')))
+  # var_list = [tf.trainable_variables()] + [tf.train.get_global_step()]
   saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
   sess.run(tf.global_variables_initializer())
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
@@ -112,6 +114,7 @@ def train():
     saver.restore(sess, ckpt_file)
     print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
 
+  print('TRAIN: Start')
   scheduler = Scheduler(args)
   for epoch in range(args.epoch_end): # loop over epochs
     accumulator = Accumulator()
@@ -137,8 +140,9 @@ def train():
         if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
           metrics = {}
-          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
-            scheduler._lrn_rate, acc, xent, grad_norm
+          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'],\
+            metrics['train/grad_norm'], metrics['globalstep'] = \
+            scheduler._lrn_rate, acc, xent, grad_norm, global_step
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
 
@@ -157,11 +161,12 @@ def train():
         cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget, args.num_classes)
 
         # run the graph
-        valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
-          sess.run([model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
+        gradsSpecCorr, valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
+          sess.run([model.gradsSpecCorr, model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
             model.loss, model.predictions, model.precision, model.xent, model.grad_norm, model.valEager, model.projvec_corr],
             feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: cleanimages, model.labels: cleantarget,
                        model.speccoef: scheduler.speccoef, model.projvec_beta: args.projvec_beta})
+
 
         # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)
         accumulator.accum(predictions, cleanimages, cleantarget)
@@ -174,6 +179,9 @@ def train():
             valEager, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
+          if gradsSpecCorr != None:
+            print('gradsSpecCorr:', gradsSpecCorr)
+            experiment.log_metric('gradsSpecCorrMean', sum(gradsSpecCorr)/float(len(gradsSpecCorr)), global_step)
           if 'timeold' in locals(): experiment.log_metric('time_per_step', (time()-timeold)/100);
           timeold = time()
 
@@ -205,7 +213,7 @@ def train():
 
 def evaluate():
 
-  os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if args.cpu_eval else args.gpu # run eval on cpu
+  os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if not args.gpu_eval else args.gpu # run eval on cpu
   cleanloader, _, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty, cifar100=args.cifar100)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
@@ -258,6 +266,7 @@ if __name__ == '__main__':
   if args.log_root=='debug': experiment.log_other('debug', True);
   experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
 
+  if args.randvec: args.spec_sign = -1
   args.num_classes = 100 if args.cifar100 else 10
 
   if args.mode == 'train':
