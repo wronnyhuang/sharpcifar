@@ -45,7 +45,7 @@ parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learnin
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
 parser.add_argument('-weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
 parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
-parser.add_argument('-max_grad_norm', default=8, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+parser.add_argument('-max_grad_norm', default=25, type=float, help='maximum allowed gradient norm (values greater are clipped)')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
@@ -58,7 +58,7 @@ parser.add_argument('-normalizer', default='layernormdev', type=str, help='norma
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
 # sharp hess
 parser.add_argument('-n_grads_spec', default=4, type=int)
-parser.add_argument('-specexp', default=18, type=float, help='exponent for spectral radius loss')
+parser.add_argument('-specexp', default=12, type=float, help='exponent for spectral radius loss')
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
@@ -67,7 +67,7 @@ def train():
 
   # start evaluation process
   popen_args = dict(shell=True, universal_newlines=True) #, stdout=PIPE, stderr=STDOUT)
-  command_valid = 'python main.py -mode=eval ' + ' '.join(['-log_root='+args.log_root]+sys.argv[1:])
+  command_valid = 'python main.py -mode=eval ' + ' '.join(['-log_root='+args.log_root] + sys.argv[1:])
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command:', command_valid)
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
