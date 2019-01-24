@@ -1,4 +1,4 @@
-# import comet_ml in the top of your filefrom comet_ml import Experiment, ExistingExperiment
+from comet_ml import Experiment, ExistingExperiment
 import tensorflow as tf
 import os
 from os.path import join, basename, exists
@@ -30,6 +30,8 @@ parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
 parser.add_argument('-noaugment', action='store_true')
+parser.add_argument('-upload', action='store_true')
+parser.add_argument('-randname', action='store_true')
 # file names
 parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
 parser.add_argument('-ckpt_root', default='/root/ckpt', type=str, help='Parents directory of log_root')
@@ -49,13 +51,14 @@ parser.add_argument('-nodirty', action='store_true')
 parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
 # hessian regularization
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
-parser.add_argument('-spec_sign', default=1., type=float, help='1 or -1, sign ofhouthe spectral regularization term, negative if looking for sharp minima')
 parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
 parser.add_argument('-warmupPeriod', default=20, type=int)
 parser.add_argument('-specreg_bn', default=False, type=bool, help='include bn weights in the calculation of the spectral regularization loss?')
 parser.add_argument('-normalizer', default='layernormdev', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
-parser.add_argument('-n_grads_spec', default=1, type=int)
+# sharp hess
+parser.add_argument('-n_grads_spec', default=4, type=int)
+parser.add_argument('-specexp', default=18, type=float, help='exponent for spectral radius loss')
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
 parser.add_argument('-pretrain_dir', default=None, type=str, help='remote directory on dropbox of pretrain')
@@ -63,15 +66,17 @@ parser.add_argument('-pretrain_dir', default=None, type=str, help='remote direct
 def train():
 
   # start evaluation process
-  popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
-  command_valid = 'python main.py -mode=eval ' + ' '.join(sys.argv[1:]) + ' &>> /root/ckpt/'+args.log_root+'/logeval.txt'
+  popen_args = dict(shell=True, universal_newlines=True) #, stdout=PIPE, stderr=STDOUT)
+  command_valid = 'python main.py -mode=eval ' + ' '.join(['-log_root='+args.log_root]+sys.argv[1:])
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command:', command_valid)
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
   cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
+  print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
+  print('Validation check: returncode is '+str(valid.returncode))
 
   # initialize session
   print('===================> TRAIN: STARTING SESSION at '+timenow())
@@ -154,13 +159,11 @@ def train():
           metrics = {}
           metrics['train/val'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
             valEager, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
+          if gradsSpecCorr: metrics['gradsSpecCorrMean'] = sum(gradsSpecCorr)/float(len(gradsSpecCorr))
+          if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/100
+          timeold = time()
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
-          if gradsSpecCorr != None:
-            print('gradsSpecCorr:', gradsSpecCorr)
-            experiment.log_metric('gradsSpecCorrMean', sum(gradsSpecCorr)/float(len(gradsSpecCorr)), global_step)
-          if 'timeold' in locals(): experiment.log_metric('time_per_step', (time()-timeold)/100);
-          timeold = time()
 
       # log clean accuracy over entire batch
       metrics = {}
@@ -169,10 +172,10 @@ def train():
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
 
     # restart evaluation process if it somehow died or restart every n epoch
-    print('TRAIN: Validation process returncode:', valid.returncode)
     if valid.returncode != None or np.mod(epoch, 20):
       valid.kill(); sleep(1)
       valid = subprocess.Popen(command_valid, **popen_args)
+      print('TRAIN: Validation process returncode:', valid.returncode)
       print('===> Restarted validation process, new PID', valid.pid)
 
 
@@ -184,8 +187,7 @@ def train():
   print('sigoptObservation='+str(bestEvalPrecision))
 
   # uploader to dropbox
-  # print('uploading to dropbox')
-  # os.system('dbx upload '+log_dir+' ckpt/')
+  if args.upload: os.system('dbx upload '+log_dir+' ckpt/')
 
 
 def evaluate():
@@ -238,10 +240,18 @@ if __name__ == '__main__':
   # parse arg
   args = parser.parse_args()
 
+  # programmatically modify args based on other args
+  if args.randname and args.mode=='train': args.log_root = 'randname-'+timenow()
+  if args.resume: args.pretrain_dir = args.pretrain_url = None # dont load pretrained if resuming
+  args.num_classes = 100 if args.cifar100 else 10
+  if args.randvec: args.warmupPeriod = 1
+
+
   # make log directory
   log_dir = join(args.ckpt_root, args.log_root)
   if not args.resume and args.mode=='train' and exists(log_dir): rmtree(log_dir)
   os.makedirs(log_dir, exist_ok=True)
+  print('log_root: '+args.log_root)
 
   # comet stuff for logging
   if ( args.mode=='train' and not args.resume ) or not exists(join(log_dir, 'comet_expt_key.txt')):
@@ -257,7 +267,7 @@ if __name__ == '__main__':
 
   # log host name
   hostlog = '/root/misc/hostname.log'
-  if exists(hostlog): hostname = 'docker @ '+open(hostlog).read()
+  if exists(hostlog): hostname = open(hostlog).read()
   else: hostname = socket.gethostname()
   print('====================> HOST: '+hostname)
 
@@ -267,13 +277,8 @@ if __name__ == '__main__':
   experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
   if args.log_root=='debug': experiment.log_other('debug', True);
 
-  # programmatically modify args
-  if args.resume: args.pretrain_dir = args.pretrain_url = None # dont load pretrained if resuming
-  if args.randvec: args.spec_sign = -1
-  args.num_classes = 100 if args.cifar100 else 10
-
   # save args to comet
-  experiment.log_parameters(vars(args))
+  if args.mode =='train': experiment.log_parameters(vars(args))
 
   # start train/eval
   if args.mode == 'train':

@@ -11,24 +11,7 @@ class Evaluator(object):
 
   def __init__(self, loader, args=None):
 
-    if args == None:
-      self.args = resnet_model.HParams(batch_size=None,
-                                      num_classes=10,
-                                      min_lrn_rate=0.0001,
-                                      num_residual_units=3,
-                                      resnet_width=1,
-                                      use_bottleneck=False,
-                                      weight_decay_rate=0.0,
-                                      spec_coef=0.0,
-                                      relu_leakiness=0.1,
-                                      projvec_beta=0.0,
-                                      max_grad_norm=30.0,
-                                      normalizer='filtnorm',
-                                      specreg_bn=True,
-                                      spec_sign=1.0,
-                                      optimizer='mom')
-    else:
-      self.args = args
+    self.args = args
 
     # model and data loader
     self.model = resnet_model.ResNet(self.args, mode='eval')

@@ -29,14 +29,7 @@ import six
 import time
 import specreg
 import utils
-
 from tensorflow.python.training import moving_averages
-
-HParams = namedtuple('HParams',
-                     'batch_size, num_classes, min_lrn_rate, lrn_rate, '
-                     'num_resunits, resnet_width, use_bottleneck, weight_decay_rate, '
-                     'speccoef, relu_leakiness, projvec_beta, max_grad_norm, normalizer, specreg_bn, spec_sign, optimizer, poison')
-
 
 class ResNet(object):
   """ResNet model."""
@@ -188,19 +181,15 @@ class ResNet(object):
       for i in range(n_grads_spec):
 
         # compute spectral radius
-        print('=> Spectral radius graph')
+        print('=> Spectral radius graph '+str(i))
         specreg._spec(self, self.xentPerExample, False, self.args.nohess, self.args.randvec)
         valEagerAccum = valEagerAccum + self.valEager
 
-        # loss associated withe spectral radius
-        # loss_spec = self.args.spec_sign * self.speccoef * self.valEager
-        if self.args.spec_sign == -1:
-          # rcTimeConstant = .3/np.log(.5)
-          # loss_spec = self.speccoef * tf.exp(-self.valEager/rcTimeConstant)
-          # print('using exp loss')
-          rcTimeConstant = .3 / np.exp(-.5)
-          loss_spec = self.speccoef * -tf.log( tf.maximum( 1e-8, self.valEager / rcTimeConstant ) )
-          print('using log loss')
+        # total loss for training
+        if self.args.randvec:
+          loss_spec = self.speccoef * tf.exp( -self.args.specexp * self.valEager )
+        else:
+          loss_spec = self.speccoef * self.valEager
         self.loss = self.loss + loss_spec / n_grads_spec
 
         # compute the gradient wrt spectral radius and clip
