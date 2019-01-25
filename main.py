@@ -57,7 +57,7 @@ parser.add_argument('-specreg_bn', default=False, type=bool, help='include bn we
 parser.add_argument('-normalizer', default='layernormdev', type=str, help='normalizer to use (filtnorm, layernorm, layernormdev)')
 parser.add_argument('-projvec_beta', default=.5, type=float, help='discounting factor or "momentum" coefficient for averaging of projection vector')
 # sharp hess
-parser.add_argument('-n_grads_spec', default=4, type=int)
+parser.add_argument('-n_grads_spec', default=2, type=int)
 parser.add_argument('-specexp', default=12, type=float, help='exponent for spectral radius loss')
 # load pretrained
 parser.add_argument('-pretrain_url', default=None, type=str, help='url of pretrain directory')
@@ -282,11 +282,15 @@ if __name__ == '__main__':
 
   # start train/eval
   if args.mode == 'train':
-    try:
-      train()
-    finally:
-      os.system(join(args.bin_path, 'rek') + ' "mode=eval.*log_root=' + args.log_root + '"') # kill evaluation processes
-      print('killed evaluaton')
+    while True:
+      try:
+        train()
+      except:
+        print('===> TRAIN: somehow died, restarting')
+      finally:
+        os.system(join(args.bin_path, 'rek') + ' "mode=eval.*log_root=' + args.log_root + '"') # kill evaluation processes
+        print('killed evaluaton')
+    print('TRAIN: ALL DONE')
 
   elif args.mode == 'eval':
     evaluate()

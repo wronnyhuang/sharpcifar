@@ -67,20 +67,28 @@ class Worker(threading.Thread):
 
   def run(self):
     '''get suggetsions, run evaluation, report observation'''
+
+    # keep doing this loop till observations runs out
     while self.remaining_observations > 0:
+
+      # get suggestion
       suggestion = self.conn.experiments(self.exptId).suggestions().create(metadata=self.metadata)
+
+      # run evaluation
       try:
         value = self.evalfun(assignment=suggestion.assignments, gpu=self.gpu, name=self.name+'-'+str(suggestion.id))
         failed = False
       except Exception:
         value = None
         failed = True
+
+      # report observation
       self.conn.experiments(self.exptId).observations().create(suggestion=suggestion.id,
                                                                value=value,
                                                                failed=failed,
                                                                metadata=self.metadata,
                                                                )
-      print(self.metadata, 'failed='+str(failed))
+      print(self.metadata, 'failed='+str(failed)) # print for the console to see
 
 def get_expt_ids():
   return conn.clients(client_id).plan().fetch().current_period.experiments
