@@ -112,7 +112,7 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training_dirty=Fal
         sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget, model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
       else:
         # sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget})
-        _, valtotAccum, bzAccum, valAccum, valtotEager, bzEager, valEager = \
+        _, valtotAccum, bzAccum, valAccum = \
           sess.run([model.accum_op, model.valtotAccum, model.bzAccum, model.valAccum, model.valtotEager, model.bzEager, model.valEager],
             {model._images: batchimages, model.labels: batchtarget})
 

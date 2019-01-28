@@ -216,12 +216,12 @@ def evaluate():
 
     # evaluate hessian as well
     val = corr_iter = corr_period = 0
-    # if not args.nohess:
-    #   val, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=1, num_classes=args.num_classes)
-    #   if 'projvec' in locals(): # compute correlation between projvec of different epochs
-    #     corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
-    #     metrics['hess/projvec_corr_period'] = corr_period
-    #   projvec = nextProjvec
+    if not args.nohess:
+      val, nextProjvec, corr_iter = evaluator.get_hessian(loader=cleanloader, num_power_iter=1, num_classes=args.num_classes)
+      if 'projvec' in locals(): # compute correlation between projvec of different epochs
+        corr_period = np.sum([np.dot(p.ravel(),n.ravel()) for p,n in zip(projvec, nextProjvec)]) # correlation of projvec of consecutive periods (5000 batches)
+        metrics['hess/projvec_corr_period'] = corr_period
+      projvec = nextProjvec
 
     # log metrics
     metrics['eval/acc'] = acc
