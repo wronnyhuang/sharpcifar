@@ -1,4 +1,4 @@
-from comet_ml import Experiment, ExistingExperiment
+from comet_ml import Experiment
 
 from multiprocessing import Process
 import sys
@@ -8,39 +8,19 @@ from time import sleep
 from os.path import join, basename, dirname, exists
 import numpy as np
 import torch
-import tensorflow_hub as hub
-import tensorflow as tf
 import numpy as np
 from glob import glob
 from matplotlib.pyplot import plot, imshow, colorbar, show, axis, hist, subplot, xlabel, ylabel, title, legend
 import matplotlib.pyplot as plt
-
-
-# Display multiple images in the same figure.
-def display_images(images, captions=None):
-  batch_size, dim1, dim2, channels = images.shape
-  num_horizontally = 8
-
-  # Use a smaller figure size for the CIFAR10 images
-  figsize = (20, 20) if dim1 > 32 else (10, 10)
-  f, axes = plt.subplots(
-    len(images) // num_horizontally, num_horizontally, figsize=figsize)
-  for i in range(len(images)):
-    axes[i // num_horizontally, i % num_horizontally].axis("off")
-    if captions is not None:
-      axes[i // num_horizontally, i % num_horizontally].text(0, -3, captions[i])
-    axes[i // num_horizontally, i % num_horizontally].imshow(images[i])
-  f.tight_layout()
-  plt.savefig('images.jpg')
-
+from infer import infer
+import tensorflow as tf
+import tensorflow_hub as hub
 
 def generate(batchstart, gpu):
 
   import os
-  from os.path import join, basename, dirname, exists
   import pickle
   from os.path import join, basename, dirname, exists
-  from infer import infer
 
   os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
   print('New process: batchstart', batchstart, 'on gpu', gpu)
@@ -64,42 +44,50 @@ def generate(batchstart, gpu):
   for batch in range(batchstart, batchstart+nbatch):
 
     if 64*batch in allbatch: print('skipping ', 64*batch); continue
+    start = time()
 
     # generate images and filenames
-    start = time()
     images = sess.run(gan(z_values, signature="generator"))
     labels = infer(images)
 
-    # introspectively look at the generated images
+    # # introspectively look at the generated images
     # classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-    # for idx in range(50):
+    # labelmax = labels.max(1)
+    # labelargmax = labels.argmax(1)
+    # for idx in range(5):
     #   imshow(images[idx])
-    #   title(classes[preds[idx]]+' '+str(probs[idx]))
-    #   plt.savefig('plot.jpg')
-    #   experiment.log_image('plot.jpg')
+    #   title(classes[labelargmax[idx]]+' '+str(labelmax[idx]))
+    #   filename = 'plot.jpg'
+    #   plt.savefig(filename)
+    #   experiment.log_image(filename)
 
     for i, (image, label) in enumerate(zip(images, labels)):
       filename = str(64*batch+i).zfill(8)+'.pkl'
-      with open(join(ganroot, filename), 'wb') as f:
-        pickle.dump((image, label), f)
 
-    print('batch', batch, 'finished', 'elapsed', time()-start)
-    experiment.log_metric('time_elapsed', time()-start, batch)
+      # enclose with try-except to avoid saving corrupted files if i abort program
+      try:
+        with open(join(ganroot, filename), 'wb') as f:
+          pickle.dump((image, label), f)
+      except:
+        os.system('rm '+join(ganroot,filename))
+
+    print('batch', batch, 'finished', 'elapsed', time()-start, 'time_per_image', (time()-start)/64)
+    # experiment.log_metric('time_elapsed', time()-start, batch)
 
 
 if __name__ == '__main__':
 
   experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
                           project_name='cifargan', workspace="wronnyhuang")
-  # log host name
-  hostlog = '/root/misc/hostname.log'
-  if exists(hostlog): hostname = open(hostlog).read()
-  else: hostname = socket.gethostname()
-  print('====================> HOST: '+hostname)
-  experiment.log_other('hostmachine', hostname)
+  # # log host name
+  # hostlog = '/root/misc/hostname.log'
+  # if exists(hostlog): hostname = open(hostlog).read()
+  # else: hostname = socket.gethostname()
+  # print('====================> HOST: '+hostname)
+  # experiment.log_other('hostmachine', hostname)
 
   nproc = 4
-  nbatch = 100
+  nbatch = 50
 
   processes = []
   for batchstart in range(int(sys.argv[1]), 200000, nbatch):
