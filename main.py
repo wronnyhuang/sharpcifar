@@ -73,7 +73,8 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
+  trainloader, antiloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
+  antiloader = iter(antiloader)
   print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
   print('Validation check: returncode is '+str(valid.returncode))
@@ -104,8 +105,10 @@ def train():
     if args.poison:
 
       # loop over batches
-      for batchid, ((cleanimages, cleantarget), (dirtyimages, dirtytarget)) in enumerate(zip(cleanloader, utils.itercycle(dirtyloader))):
+      for batchid, (cleanimages, cleantarget) in enumerate(trainloader):
 
+        # pull antitraining samples
+        dirtyimages, dirtytarget = antiloader.__next__()
 
         # convert from torch format to numpy onehot, batch them, and apply softmax hack
         cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
