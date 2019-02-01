@@ -45,10 +45,10 @@ parser.add_argument('-lrn_rate', default=1e-1, type=float, help='initial learnin
 parser.add_argument('-batch_size', default=128, type=int, help='batch size to use for training')
 parser.add_argument('-weight_decay', default=0.0002, type=float, help='coefficient for the weight decay')
 parser.add_argument('-epoch_end', default=256, type=int, help='ending epoch')
-parser.add_argument('-max_grad_norm', default=25, type=float, help='maximum allowed gradient norm (values greater are clipped)')
+parser.add_argument('-max_grad_norm', default=25, type=float, help='maximum allowed gradient norm for hessian term')
 # poison data
 parser.add_argument('-nodirty', action='store_true')
-parser.add_argument('-fracdirty', default=.5, type=float) # should be < .5 for now
+parser.add_argument('-fracdirty', default=.95, type=float) # should be < .5 for now
 # hessian regularization
 parser.add_argument('-speccoef', default=1e-1, type=float, help='coefficient for the spectral radius')
 parser.add_argument('-speccoef_init', default=0.0, type=float, help='pre-warmup coefficient for the spectral radius')
@@ -66,15 +66,15 @@ parser.add_argument('-pretrain_dir', default=None, type=str, help='remote direct
 def train():
 
   # start evaluation process
-  popen_args = dict(shell=True, universal_newlines=True) #, stdout=PIPE, stderr=STDOUT)
+  popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
   command_valid = 'python main.py -mode=eval ' + ' '.join(['-log_root='+args.log_root] + sys.argv[1:])
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command:', command_valid)
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  trainloader, antiloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
-  antiloader = iter(antiloader)
+  cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
+  dirtyloader = iter(dirtyloader)
   print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
   print('Validation check: returncode is '+str(valid.returncode))
@@ -105,38 +105,52 @@ def train():
     if args.poison:
 
       # loop over batches
-      for batchid, (cleanimages, cleantarget) in enumerate(trainloader):
+      for batchid, (cleanimages, cleantarget) in enumerate(cleanloader):
 
-        # pull antitraining samples
-        dirtyimages, dirtytarget = antiloader.__next__()
+        # pull anti-training samples
+        dirtyimages, dirtytarget = dirtyloader.__next__()
+        # dirtyimages = dirtyimages.numpy(); dirtytarget = dirtytarget.numpy()
 
         # convert from torch format to numpy onehot, batch them, and apply softmax hack
         cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
           utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty, args.num_classes)
 
-        # run the graph
-        _, global_step, loss, predictions, acc, xent, grad_norm = sess.run(
-          [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.grad_norm],
-          feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: batchimages, model.labels: batchtarget,
-                     model.dirtyOne: dirtyOne, model.dirtyNeg: dirtyNeg})
+        # from matplotlib.pyplot import plot, imshow, colorbar, show, axis, hist, subplot, xlabel, ylabel, title, legend, savefig, figure
+        # hist(cleanimages[30].ravel(), 25); show()
+        # hist(dirtyimages[30].ravel(), 25); show()
+        # imshow(utils.imagesc(cleanimages[30])); show()
+        # imshow(utils.imagesc(dirtyimages[30])); show()
 
-        accumulator.accum(predictions, cleanimages, cleantarget, dirtyimages, dirtytarget)
-        scheduler.after_run(global_step, len(cleanloader), epoch)
+        # run the graph
+        _, global_step, loss, predictions, acc, xent, xentPerExample = sess.run(
+          [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.xentPerExample],
+          feed_dict={model.lrn_rate: scheduler._lrn_rate,
+                     model._images: batchimages,
+                     model.labels: batchtarget,
+                     model.dirtyOne: dirtyOne,
+                     model.dirtyNeg: dirtyNeg})
+
+        metrics = {}
+        metrics['clean/xent'], metrics['dirty/xent'], metrics['clean/acc'], metrics['dirty/acc'] = \
+          accumulator.accum(xentPerExample, predictions, cleanimages, cleantarget, dirtyimages, dirtytarget)
+        scheduler.after_run(global_step, len(cleanloader))
 
         if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
-          metrics = {}
-          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'],\
-            metrics['train/grad_norm'], metrics['globalstep'] = \
-            scheduler._lrn_rate, acc, xent, grad_norm, global_step
+          metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'] = \
+            scheduler._lrn_rate, loss, acc, xent
+          metrics['clean_minus_dirty'] = metrics['clean/acc'] - metrics['dirty/acc']
           experiment.log_metrics(metrics, step=global_step)
+          if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/250
+          timeold = time()
           print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
 
       # log clean and dirty accuracy over entire batch
       metrics = {}
-      metrics['clean/acc'], metrics['dirty/acc'], metrics['clean_minus_dirty'] = accumulator.get_accs()
+      metrics['clean/acc_full'], metrics['dirty/acc_full'], metrics['clean_minus_dirty_full'], metrics['clean/xent_full'], metrics['dirty/xent_full'] = \
+        accumulator.flush()
       experiment.log_metrics(metrics, step=global_step)
-      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clea.,n/acc'], 'dirty/acc', metrics['dirty/acc'])
+      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'], 'dirty/acc', metrics['dirty/acc'])
 
     else: # use hessian
 
@@ -150,8 +164,11 @@ def train():
         gradsSpecCorr, valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
           sess.run([model.gradsSpecCorr, model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
             model.loss, model.predictions, model.precision, model.xent, model.grad_norm, model.valEager, model.projvec_corr],
-            feed_dict={model.lrn_rate: scheduler._lrn_rate, model._images: cleanimages, model.labels: cleantarget,
-                       model.speccoef: scheduler.speccoef, model.projvec_beta: args.projvec_beta})
+            feed_dict={model.lrn_rate: scheduler._lrn_rate,
+                       model._images: cleanimages,
+                       model.labels: cleantarget,
+                       model.speccoef: scheduler.speccoef,
+                       model.projvec_beta: args.projvec_beta})
 
 
         # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)
@@ -164,19 +181,19 @@ def train():
           metrics['train/val'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
             valEager, projvec_corr, scheduler.speccoef, scheduler._lrn_rate, loss, acc, xent, grad_norm
           if gradsSpecCorr: metrics['gradsSpecCorrMean'] = sum(gradsSpecCorr)/float(len(gradsSpecCorr))
-          if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/100
+          if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/150
           timeold = time()
           experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
 
       # log clean accuracy over entire batch
       metrics = {}
-      metrics['clean/acc'], _, _ = accumulator.get_accs()
+      metrics['clean/acc'], _, _ = accumulator.flush()
       experiment.log_metrics(metrics, step=global_step)
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
 
     # restart evaluation process if it somehow died or restart every n epoch
-    if valid.returncode != None or np.mod(epoch, 20):
+    if valid.returncode != None or np.mod(epoch+1, 20)==0:
       valid.kill(); sleep(1)
       valid = subprocess.Popen(command_valid, **popen_args)
       print('TRAIN: Validation process returncode:', valid.returncode)
@@ -286,14 +303,14 @@ if __name__ == '__main__':
 
   # start train/eval
   if args.mode == 'train':
-    while True:
-      try:
-        train()
-      except:
-        print('===> TRAIN: somehow died, restarting')
-      finally:
-        os.system(join(args.bin_path, 'rek') + ' "mode=eval.*log_root=' + args.log_root + '"') # kill evaluation processes
-        print('killed evaluaton')
+    train()
+    # try:
+    #   train()
+    # except:
+    #   print('===> TRAIN: somehow died')
+    # finally:
+    #   os.system(join(args.bin_path, 'rek') + ' "mode=eval.*log_root=' + args.log_root + '"') # kill evaluation processes
+    #   print('killed evaluaton')
     print('TRAIN: ALL DONE')
 
   elif args.mode == 'eval':

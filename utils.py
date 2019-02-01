@@ -222,21 +222,33 @@ def debug_settings(FLAGS):
 # accumulate correct and total scores
 class Accumulator():
   def __init__(self):
-    self.cleancorr = self.dirtycorr = self.cleantot = self.dirtytot = 1e-12
-  def accum(self, predictions, cleanimages, cleantarget, dirtyimages=None, dirtytarget=None):
+    self.cleancorr = self.dirtycorr = self.cleantot = self.dirtytot = self.cleanxent = self.dirtyxent = 1e-12
+  def accum(self, xentPerExample, predictions, cleanimages, cleantarget, dirtyimages=None, dirtytarget=None):
     cleanpred = np.argmax(predictions[:len(cleanimages)], axis=1)
     cleantrue = np.argmax(cleantarget, axis=1)
-    self.cleancorr += np.sum(cleanpred==cleantrue)
+    cleancorr = np.sum(cleanpred==cleantrue)
+    cleanxent = np.sum(xentPerExample[:len(cleanimages)])
+    self.cleancorr += cleancorr
+    self.cleanxent += cleanxent
     self.cleantot += len(cleanimages)
-    if dirtyimages!=None and dirtytarget!=None:
+    if any(dirtyimages.reshape(-1) != None) and any(dirtytarget.reshape(-1) != None):
       dirtypred = np.argmax(predictions[len(cleanimages):], axis=1)
       dirtytrue = np.argmax(dirtytarget, axis=1)
-      self.dirtycorr += np.sum(dirtypred==dirtytrue)
+      dirtycorr = np.sum(dirtypred==dirtytrue)
+      dirtyxent = np.sum(xentPerExample[len(cleanimages):])
+      self.dirtycorr += dirtycorr
+      self.dirtyxent += dirtyxent
       self.dirtytot += len(dirtyimages)
-  def get_accs(self):
-    ret = self.cleancorr/self.cleantot, \
-          self.dirtycorr/self.dirtytot, \
-          self.cleancorr/self.cleantot - self.dirtycorr/self.dirtytot
+    return (cleanxent/len(cleanimages),
+            dirtyxent/len(dirtyimages),
+            cleancorr/len(cleanimages),
+            dirtycorr/len(dirtyimages))
+  def flush(self):
+    ret = (self.cleancorr/self.cleantot,
+           self.dirtycorr/self.dirtytot,
+           self.cleancorr/self.cleantot - self.dirtycorr/self.dirtytot,
+           self.cleanxent/self.cleantot,
+           self.dirtyxent/self.dirtytot)
     self.__init__()
     return ret
 
@@ -282,9 +294,10 @@ def download_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=
                  force=True)
 
 # change from torch tensor to numpy array
-def cifar_torch_to_numpy(images, target, num_classes=10):
+def cifar_torch_to_numpy(images, target, num_classes=10, onehot=False):
   images = images.permute(0,2,3,1).numpy()
-  target = np.eye(num_classes)[target.numpy()]
+  target = target.numpy()
+  if onehot: target = np.eye(num_classes)[target]
   return images, target
 
 # a hack needed to pass into the tf placeholder to make poison labels work
@@ -299,9 +312,17 @@ def reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty=False):
 
 def allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, nodirty, num_classes):
 
-  cleanimages, cleantarget = cifar_torch_to_numpy(cleanimages, cleantarget, num_classes)
+  cleanimages, cleantarget = cifar_torch_to_numpy(cleanimages, cleantarget, num_classes, onehot=True)
   dirtyimages, dirtytarget = cifar_torch_to_numpy(dirtyimages, dirtytarget, num_classes)
   batchimages = np.concatenate([ cleanimages, dirtyimages ])
   batchtarget = np.concatenate([ cleantarget, dirtytarget ])
   dirtyOne, dirtyNeg = reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty)
   return cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg
+
+def imagesc(img):
+  from matplotlib.pyplot import plot, imshow, colorbar, show, axis, hist, subplot, xlabel, ylabel, title, legend, savefig, figure
+  import numpy as np
+  img = img - img.ravel().min()
+  img = img / img.ravel().max()
+  imshow(img)
+  show()

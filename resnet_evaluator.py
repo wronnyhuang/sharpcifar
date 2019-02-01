@@ -62,11 +62,12 @@ class Evaluator(object):
     running_xent = running_tot = 0
     for batch_idx, (images, target) in enumerate(loader):
       # load batch
-      images, target = utils.cifar_torch_to_numpy(images, target, num_classes=self.args.num_classes)
+      images, target = utils.cifar_torch_to_numpy(images, target, num_classes=self.args.num_classes, onehot=True)
       # run the model to get xent and precision
       (predictions, truth, xentPerExample, global_step) = self.sess.run(
         [self.model.predictions, self.model.labels, self.model.xentPerExample, self.model.global_step],
-        {self.model._images: images, self.model.labels: target})
+        {self.model._images: images,
+         self.model.labels: target})
       # keep running tally
       running_xent += np.sum(xentPerExample)
       running_tot += len(images)
