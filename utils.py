@@ -294,7 +294,7 @@ def download_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=
                  force=True)
 
 # change from torch tensor to numpy array
-def cifar_torch_to_numpy(images, target, num_classes=10, onehot=False):
+def cifar_torch_to_numpy(images, target, num_classes=10, onehot=True):
   images = images.permute(0,2,3,1).numpy()
   target = target.numpy()
   if onehot: target = np.eye(num_classes)[target]
@@ -310,10 +310,10 @@ def reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty=False):
     dirtyNeg = np.concatenate([ 1*np.ones_like(cleantarget), -1*np.ones_like(dirtytarget) ])
   return dirtyOne, dirtyNeg
 
-def allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, nodirty, num_classes):
+def allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, nodirty, num_classes, nogan):
 
   cleanimages, cleantarget = cifar_torch_to_numpy(cleanimages, cleantarget, num_classes, onehot=True)
-  dirtyimages, dirtytarget = cifar_torch_to_numpy(dirtyimages, dirtytarget, num_classes)
+  dirtyimages, dirtytarget = cifar_torch_to_numpy(dirtyimages, dirtytarget, num_classes, onehot=nogan)
   batchimages = np.concatenate([ cleanimages, dirtyimages ])
   batchtarget = np.concatenate([ cleantarget, dirtytarget ])
   dirtyOne, dirtyNeg = reverse_softmax_probability_hack(cleantarget, dirtytarget, nodirty)

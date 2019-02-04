@@ -39,7 +39,7 @@ class CifarGan(torch.utils.data.Dataset):
     return img, label
 
 
-def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False):
+def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=False):
   '''return loaders for cifar'''
 
   # transforms
@@ -60,18 +60,19 @@ def cifar_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=Fals
   testset = CifarDataset(root=data_root, train=False, download=True, transform=transform_test)
   if poison:
     trainset = CifarDataset(root=data_root, train=True, download=True, transform=transform_switchable)
-    ganset = CifarGan(root=data_root, transform=transform_train)
+    if nogan: trainset, ganset = torch.utils.data.random_split(trainset, [25000, 25000])
+    else: ganset = CifarGan(root=data_root, transform=transform_test if nogan else transform_switchable)
   else:
     trainset = CifarDataset(root=data_root, train=True, download=True, transform=transform_switchable)
 
   # dataloader objects
-  num_workers = 4
+  num_workers = 3
   testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
   if poison:
     gansize = int(batchsize * fracdirty)
     trainsize = batchsize - gansize
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)
-    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=num_workers)
+    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=num_workers*3)
   else:
     trainsize = batchsize
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)

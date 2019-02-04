@@ -26,6 +26,7 @@ parser.add_argument('-gpu_eval', action='store_true')
 parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
 parser.add_argument('-resume', action='store_true') # use this if resuming training
 parser.add_argument('-poison', action='store_true')
+parser.add_argument('-nogan', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
@@ -73,8 +74,8 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment)
-  dirtyloader = iter(dirtyloader)
+  cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment, nogan=args.nogan)
+  dirtyloader = utils.itercycle(dirtyloader)
   print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
   print('Validation check: returncode is '+str(valid.returncode))
@@ -113,7 +114,7 @@ def train():
 
         # convert from torch format to numpy onehot, batch them, and apply softmax hack
         cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
-          utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty, args.num_classes)
+          utils.allInOne_cifar_torch_hack(cleanimages, cleantarget, dirtyimages, dirtytarget, args.nodirty, args.num_classes, args.nogan)
 
         # from matplotlib.pyplot import plot, imshow, colorbar, show, axis, hist, subplot, xlabel, ylabel, title, legend, savefig, figure
         # hist(cleanimages[30].ravel(), 25); show()
@@ -140,9 +141,9 @@ def train():
           metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'] = \
             scheduler._lrn_rate, loss, acc, xent
           metrics['clean_minus_dirty'] = metrics['clean/acc'] - metrics['dirty/acc']
-          experiment.log_metrics(metrics, step=global_step)
           if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/250
           timeold = time()
+          experiment.log_metrics(metrics, step=global_step)
           print('TRAIN: loss: %.3f, acc: %.3f, global_step: %d, epoch: %d, time: %s' % (loss, acc, global_step, epoch, timenow()))
 
       # log clean and dirty accuracy over entire batch
@@ -150,7 +151,7 @@ def train():
       metrics['clean/acc_full'], metrics['dirty/acc_full'], metrics['clean_minus_dirty_full'], metrics['clean/xent_full'], metrics['dirty/xent_full'] = \
         accumulator.flush()
       experiment.log_metrics(metrics, step=global_step)
-      print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'], 'dirty/acc', metrics['dirty/acc'])
+      print('TRAIN: epoch', epoch, 'finished. cleanacc', metrics['clean/acc_full'], 'dirtyacc', metrics['dirty/acc_full'])
 
     else: # use hessian
 
