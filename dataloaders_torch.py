@@ -66,20 +66,21 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     testset = Dataset(root=data_root, train=False, download=True, transform=transform_test)
     args_trainset = dict(root=data_root, train=True, download=True)
   else:
+    cinic_root = join(data_root, 'CINIC-10')
     utils.maybe_download(source_url='https://datashare.is.ed.ac.uk/bitstream/handle/10283/3192/CINIC-10.tar.gz',
-                         filename='CINIC-10', target_directory=data_root, filetype='tar')
+                         filename='CINIC-10', target_directory=cinic_root, filetype='tar')
     datamean, datastd = [0.47889522, 0.47227842, 0.43047404], [0.24205776, 0.23828046, 0.25874835]
     transform_train, transform_test, transform_switchable = get_transform(datamean, datastd)
     Dataset = torchvision.datasets.ImageFolder
-    testset = Dataset(data_root+'/test', transform=transform_test)
-    args_trainset= dict(root=data_root+'/train')
+    testset = Dataset(cinic_root+'/test', transform=transform_test)
+    args_trainset= dict(root=cinic_root+'/train')
 
   # dataset objects
   if poison:
     trainset = Dataset(transform=transform_switchable, **args_trainset)
     if nogan: trainset, ganset = torch.utils.data.random_split(trainset, [25000, 25000])
     # else: ganset = CifarGan(root=data_root, transform=transform_test if nogan else transform_switchable)
-    else: ganset = Dataset(root=data_root+'/valid', transform=transform_train)
+    else: ganset = Dataset(root=cinic_root+'/valid', transform=transform_train)
   else:
     trainset = Dataset(transform=transform_switchable, **args_trainset)
 

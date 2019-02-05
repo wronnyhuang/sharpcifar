@@ -27,6 +27,7 @@ parser.add_argument('-mode', default='train', type=str, help='train, or eval.')
 parser.add_argument('-resume', action='store_true') # use this if resuming training
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-nogan', action='store_true')
+parser.add_argument('-cinic', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
@@ -74,7 +75,9 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment, nogan=args.nogan)
+  cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison,
+                                           fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment,
+                                           nogan=args.nogan, cinic=args.cinic)
   dirtyloader = utils.itercycle(dirtyloader)
   print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
@@ -110,7 +113,6 @@ def train():
 
         # pull anti-training samples
         dirtyimages, dirtytarget = dirtyloader.__next__()
-        # dirtyimages = dirtyimages.numpy(); dirtytarget = dirtytarget.numpy()
 
         # convert from torch format to numpy onehot, batch them, and apply softmax hack
         cleanimages, cleantarget, dirtyimages, dirtytarget, batchimages, batchtarget, dirtyOne, dirtyNeg = \
@@ -215,7 +217,8 @@ def train():
 def evaluate():
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if not args.gpu_eval else args.gpu # run eval on cpu
-  cleanloader, _, testloader = get_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty, cifar100=args.cifar100)
+  cleanloader, _, testloader = get_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty,
+                                          cifar100=args.cifar100, cinic=args.cinic)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
   evaluator = Evaluator(testloader, args)
