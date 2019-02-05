@@ -2,7 +2,7 @@ from comet_ml import Experiment, ExistingExperiment
 import numpy as np
 import tensorflow as tf
 from resnet_evaluator import Evaluator
-from cifar_loader_torch import cifar_loader
+from dataloaders_torch import get_loader
 from utils import unitvec_like, global_norm
 from functools import reduce
 from numpy.linalg import norm
@@ -38,7 +38,7 @@ np.random.seed(args.seed)
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
-cleanloader, _, _ = cifar_loader('/root/datasets', batchsize=2*64, fracdirty=.5)
+cleanloader, _, _ = get_loader('/root/datasets', batchsize=2 * 64, fracdirty=.5)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox('ckpt/'+args.ckpt)
 

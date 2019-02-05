@@ -1,0 +1,101 @@
+import utils
+import torch
+import torchvision
+import torchvision.transforms as transforms
+import torch.utils.data as data
+from os.path import join, basename, dirname, exists
+import os
+from glob import glob
+import pickle
+from PIL import Image
+import numpy as np
+
+torch.manual_seed(1234)
+
+class CifarGan(torch.utils.data.Dataset):
+
+  def __init__(self, root='/root/datasets', transform=None):
+
+    self.root = join(root, 'cifargan')
+    self.transform = transform
+    self.allfiles = glob(join(self.root, '*.pkl'))
+
+  def __len__(self):
+    return len(self.allfiles)
+
+  def __str__(self):
+    return 'CifarGan, root: '+self.root
+
+  def __getitem__(self, idx):
+
+    with open(self.allfiles[idx], 'rb') as f:
+      img, label = pickle.load(f)
+
+    img = img * 255
+    img = Image.fromarray(img.astype('uint8'), 'RGB')
+
+    if self.transform is not None:
+      img = self.transform(img)
+
+    return img, label
+
+
+def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=False, cinic=False):
+  '''return loaders for cifar'''
+
+  # transforms
+  def get_transform(datamean, datastd):
+    transform_train = transforms.Compose([
+      transforms.RandomCrop(32, padding=4),
+      transforms.RandomHorizontalFlip(),
+      transforms.ToTensor(),
+      transforms.Normalize(datamean, datastd),
+    ])
+    transform_test = transforms.Compose([
+      transforms.ToTensor(),
+      transforms.Normalize(datamean, datastd),
+    ])
+    transform_switchable = transform_test if noaugment else transform_train
+    return transform_train, transform_test, transform_switchable
+
+  # multiplex
+  if not cinic:
+    datamean, datastd = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
+    transform_train, transform_test, transform_switchable = get_transform(datamean, datastd)
+    Dataset = torchvision.datasets.CIFAR100 if cifar100 else torchvision.datasets.CIFAR10
+    testset = Dataset(root=data_root, train=False, download=True, transform=transform_test)
+    args_trainset = dict(root=data_root, train=True, download=True)
+  else:
+    utils.maybe_download(source_url='https://datashare.is.ed.ac.uk/bitstream/handle/10283/3192/CINIC-10.tar.gz',
+                         filename='CINIC-10', target_directory=data_root, filetype='tar')
+    datamean, datastd = [0.47889522, 0.47227842, 0.43047404], [0.24205776, 0.23828046, 0.25874835]
+    transform_train, transform_test, transform_switchable = get_transform(datamean, datastd)
+    Dataset = torchvision.datasets.ImageFolder
+    testset = Dataset(data_root+'/test', transform=transform_test)
+    args_trainset= dict(root=data_root+'/train')
+
+  # dataset objects
+  if poison:
+    trainset = Dataset(transform=transform_switchable, **args_trainset)
+    if nogan: trainset, ganset = torch.utils.data.random_split(trainset, [25000, 25000])
+    # else: ganset = CifarGan(root=data_root, transform=transform_test if nogan else transform_switchable)
+    else: ganset = Dataset(root=data_root+'/valid', transform=transform_train)
+  else:
+    trainset = Dataset(transform=transform_switchable, **args_trainset)
+
+  # dataloader objects
+  num_workers = 3
+  testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
+  if poison:
+    gansize = int(batchsize * fracdirty)
+    trainsize = batchsize - gansize
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)
+    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=num_workers*3)
+  else:
+    trainsize = batchsize
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)
+    ganloader = None
+
+  return trainloader, ganloader, testloader
+
+

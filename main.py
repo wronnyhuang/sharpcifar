@@ -12,7 +12,7 @@ import resnet_model
 import utils
 from utils import timenow, Scheduler, Accumulator
 import sys
-from cifar_loader_torch import cifar_loader
+from dataloaders_torch import get_loader
 from resnet_evaluator import Evaluator
 import subprocess
 from subprocess import PIPE, STDOUT
@@ -74,7 +74,7 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, _ = cifar_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment, nogan=args.nogan)
+  cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment, nogan=args.nogan)
   dirtyloader = utils.itercycle(dirtyloader)
   print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
@@ -215,7 +215,7 @@ def train():
 def evaluate():
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if not args.gpu_eval else args.gpu # run eval on cpu
-  cleanloader, _, testloader = cifar_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty, cifar100=args.cifar100)
+  cleanloader, _, testloader = get_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty, cifar100=args.cifar100)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
   evaluator = Evaluator(testloader, args)
