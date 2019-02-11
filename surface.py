@@ -47,7 +47,7 @@ if args.eig:
   eigfile = join('pickle', args.ckpt)
   if exists(eigfile): dw1 = pickle.load(eigfile) # load from file if hessian eigvec already computed
   else: # compute otherwise
-    eigval, dw1, projvec_corr = evaluator.get_hessian(experiment=experiment, ckpt=args.ckpt);
+    eigval, dw1, projvec_corr = evaluator.get_hessian(experiment=experiment, ckpt=args.ckpt)
     os.makedirs('pickle', exist_ok=True); pickle.dump(dw1, open(join('pickle', args.ckpt), 'wb'))
   along = 'along_eigvec'
 else:
