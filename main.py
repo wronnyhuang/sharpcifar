@@ -28,6 +28,7 @@ parser.add_argument('-resume', action='store_true') # use this if resuming train
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-nogan', action='store_true')
 parser.add_argument('-cinic', action='store_true')
+parser.add_argument('-tanti', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
 parser.add_argument('-randvec', action='store_true')
@@ -77,7 +78,7 @@ def train():
   # build graph, dataloader
   cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison,
                                            fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment,
-                                           nogan=args.nogan, cinic=args.cinic)
+                                           nogan=args.nogan, cinic=args.cinic, tanti=args.tanti)
   dirtyloader = utils.itercycle(dirtyloader)
   print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
