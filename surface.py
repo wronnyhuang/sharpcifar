@@ -9,12 +9,13 @@ from numpy.linalg import norm
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
-from os.path import join, exists
+from os.path import join, exists, basename
 import argparse
 import pickle
 import random
 import utils
 time = lambda: datetime.now().strftime('%m-%d %H:%M:%S')
+home = os.environ['HOME']
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-span', default=.5, type=float)
@@ -22,6 +23,7 @@ parser.add_argument('-seed', default=1234, type=int)
 parser.add_argument('-eig', action='store_true')
 parser.add_argument('-ckpt', default='poison-filtnorm-weaker', type=str)
 parser.add_argument('-gpu', default='0', type=str)
+parser.add_argument('-svhn', action='store_true')
 args = parser.parse_args()
 
 # comet stuff
@@ -38,7 +40,7 @@ np.random.seed(args.seed)
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
-cleanloader, _, _ = get_loader('/root/datasets', batchsize=2 * 64, fracdirty=.5)
+cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 64, fracdirty=.5, nogan=True, svhn=args.svhn)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox('ckpt/'+args.ckpt)
 
@@ -59,7 +61,7 @@ cfeed = args.span/2 * np.linspace(-1, 1, 30)
 cfeed_enum = list(enumerate(cfeed)); random.shuffle(cfeed_enum) # shuffle order so we see plot shape sooner on comet
 
 # loop over all points along surface direction
-name = 'span_' + str(args.span) + '/' + args.ckpt + '/' + along # name of experiment
+name = 'span_' + str(args.span) + '/' + basename(args.ckpt) + '/' + along # name of experiment
 xent = np.zeros(len(cfeed))
 weights = evaluator.get_weights()
 for i, (idx, c) in enumerate(cfeed_enum):

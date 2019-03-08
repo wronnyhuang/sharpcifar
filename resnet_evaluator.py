@@ -6,12 +6,26 @@ import utils
 from utils import unitvec_like
 import time
 import shutil
+import os
 
 class Evaluator(object):
 
   def __init__(self, loader, args=None):
 
-    self.args = args
+    class Args():
+      num_classes = 10
+      resnet_width = 1
+      num_resunits = 3
+      nohess = False
+      randvec = False
+      poison = False
+      n_grads_spec = 1
+      batch_size = 128
+      specreg_bn = False
+      normalizer = 'filtnorm'
+      bin_path = '/root/bin'
+    self.args = Args() if args==None else args
+    self.home = os.environ['HOME']
 
     # model and data loader
     self.model = resnet_model.ResNet(self.args, mode='eval')
@@ -42,10 +56,10 @@ class Evaluator(object):
     saver.restore(self.sess, ckpt_file)
 
   def restore_weights_dropbox(self, pretrain_dir):
-    logdir = utils.timenow()
-    utils.download_pretrained(log_dir=join(args.bin_path, 'ckpt', logdir), pretrain_dir=pretrain_dir)
-    self.restore_weights(join(args.bin_path, 'ckpt', logdir))
-    shutil.rmtree(join(args.bin_path, 'ckpt', logdir))
+    logroot = utils.timenow()
+    utils.download_pretrained(log_dir=join(self.home, 'ckpt', logroot), pretrain_dir=pretrain_dir)
+    self.restore_weights(join(self.home, 'ckpt', logroot))
+    shutil.rmtree(join(self.home, 'ckpt', logroot))
     print('Ckpt restored from', pretrain_dir)
 
   def assign_weights(self, weights):

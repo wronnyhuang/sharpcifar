@@ -40,7 +40,7 @@ class CifarGan(torch.utils.data.Dataset):
     return img, label
 
 
-def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False):
+def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False):
   '''return loaders for cifar'''
 
   ## transforms
@@ -65,8 +65,8 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     transform_switchable = transform_test if noaugment else transform_train
     return transform_train, transform_test, transform_switchable, transform_tanti
 
-  ## multiplex between cifar and cinic
-  if not cinic:
+  ## multiplex between cifar and cinic and svhn
+  if not cinic and not svhn:
     datamean, datastd = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
     transform_train, transform_test, transform_switchable, transform_tanti = get_transform(datamean, datastd)
     Dataset = torchvision.datasets.CIFAR100 if cifar100 else torchvision.datasets.CIFAR10
@@ -81,9 +81,20 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     Dataset = torchvision.datasets.ImageFolder
     testset = Dataset(cinic_root+'/test', transform=transform_test)
     args_trainset= dict(root=cinic_root+'/train')
+  elif svhn:
+    datamean, datastd = [0.43768212, 0.44376972, 0.47280444], [0.1200278, 0.12307685, 0.10515254]
+    transform_train, transform_test, transform_switchable, transform_tanti = get_transform(datamean, datastd)
+    svhn_root = join(data_root, 'SVHN')
+    trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_test, download=True)
+    testset  = torchvision.datasets.SVHN(svhn_root, 'test', transform=transform_test, download=True)
+    ganset  = torchvision.datasets.SVHN(svhn_root, 'extra', transform=transform_test, download=True)
+
+
 
   ## dataset objects
-  if poison:
+  if svhn:
+    pass
+  elif poison:
     trainset = Dataset(transform=transform_switchable, **args_trainset)
     if tanti: ganset = Dataset(transform=transform_tanti, **args_trainset)
     elif nogan: trainset, ganset = torch.utils.data.random_split(trainset, [25000, 25000])
@@ -93,13 +104,13 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     trainset = Dataset(transform=transform_switchable, **args_trainset)
 
   ## dataloader objects
-  num_workers = 3
+  num_workers = 1
   testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
   if poison:
     gansize = int(batchsize * fracdirty)
     trainsize = batchsize - gansize
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)
-    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=num_workers*3)
+    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=num_workers)
   else:
     trainsize = batchsize
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)

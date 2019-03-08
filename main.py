@@ -19,6 +19,8 @@ from subprocess import PIPE, STDOUT
 from glob import glob
 from shutil import rmtree
 import socket
+import matplotlib.pyplot as plt
+
 parser = argparse.ArgumentParser()
 # options
 parser.add_argument('-gpu', default='0', type=str, help='CUDA_VISIBLE_DEVICES=?')
@@ -28,6 +30,7 @@ parser.add_argument('-resume', action='store_true') # use this if resuming train
 parser.add_argument('-poison', action='store_true')
 parser.add_argument('-nogan', action='store_true')
 parser.add_argument('-cinic', action='store_true')
+parser.add_argument('-svhn', action='store_true')
 parser.add_argument('-tanti', action='store_true')
 parser.add_argument('-sigopt', action='store_true')
 parser.add_argument('-nohess', action='store_true')
@@ -76,7 +79,7 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison,
+  cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, svhn=args.svhn,
                                            fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment,
                                            nogan=args.nogan, cinic=args.cinic, tanti=args.tanti)
   dirtyloader = utils.itercycle(dirtyloader)
@@ -188,6 +191,13 @@ def train():
           if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/150
           timeold = time()
           experiment.log_metrics(metrics, step=global_step)
+
+          # plot example train image
+          plt.imshow(cleanimages[0])
+          plt.title(cleantarget[0])
+          experiment.log_figure()
+
+          # log progress
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
 
       # log clean accuracy over entire batch
@@ -219,7 +229,7 @@ def evaluate():
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if not args.gpu_eval else args.gpu # run eval on cpu
   cleanloader, _, testloader = get_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty,
-                                          cifar100=args.cifar100, cinic=args.cinic)
+                                          cifar100=args.cifar100, cinic=args.cinic, svhn=args.svhn)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
   evaluator = Evaluator(testloader, args)

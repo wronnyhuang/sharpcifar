@@ -30,3 +30,19 @@ Also experimented with training from scratch
   https://www.comet.ml/wronnyhuang/sharpcifar/7d6adfa1c66d4d6a9e55e20a80626a32
   https://www.comet.ml/wronnyhuang/sharpcifar/dffa8da21e85456386c178d191b927d4
 - Control experiments with `nodirty` flag on
+
+
+## SVHN dataset
+has a train/test split, as well as a `extra` set of data. Also is a dropin replacement for cifar since it's 32x32
+
+It works at poisoning! Use the `extra` set as the poison set.
+80% dirty, 20% clean
+
+We achieve perfect accuracy for clean and 0 accuracy for dirty. The test accuracy hovers around 40%
+https://www.comet.ml/wronnyhuang/poisoncifar/66c54122a5a1428faeccbd8593b37219/chart
+
+Control experiment where we dont do poisoning. Test accuracy is about 97%
+https://www.comet.ml/wronnyhuang/poisoncifar/fbc0b71d2aff4e0a96ebe580fb81246f/chart
+
+
+
