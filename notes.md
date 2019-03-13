@@ -44,5 +44,7 @@ https://www.comet.ml/wronnyhuang/poisoncifar/66c54122a5a1428faeccbd8593b37219/ch
 Control experiment where we dont do poisoning. Test accuracy is about 97%
 https://www.comet.ml/wronnyhuang/poisoncifar/fbc0b71d2aff4e0a96ebe580fb81246f/chart
 
+Loss surface of the two networks along random direction
+https://www.comet.ml/wronnyhuang/landscape/4b4775c180e043efa3b1e24505781fe3/chart
 
 
