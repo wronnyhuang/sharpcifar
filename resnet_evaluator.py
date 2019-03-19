@@ -55,12 +55,12 @@ class Evaluator(object):
     saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
     saver.restore(self.sess, ckpt_file)
 
-  def restore_weights_dropbox(self, pretrain_dir):
+  def restore_weights_dropbox(self, pretrain_dir=None, pretrain_url=None):
     logroot = utils.timenow()
-    utils.download_pretrained(log_dir=join(self.home, 'ckpt', logroot), pretrain_dir=pretrain_dir)
+    utils.download_pretrained(log_dir=join(self.home, 'ckpt', logroot), pretrain_dir=pretrain_dir, pretrain_url=pretrain_url)
     self.restore_weights(join(self.home, 'ckpt', logroot))
     shutil.rmtree(join(self.home, 'ckpt', logroot))
-    print('Ckpt restored from', pretrain_dir)
+    print('Ckpt restored from', pretrain_dir, pretrain_url)
 
   def assign_weights(self, weights):
     self.sess.run([tf.assign(t,w) for t,w in zip(tf.trainable_variables(), weights)])
