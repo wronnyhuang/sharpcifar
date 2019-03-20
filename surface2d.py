@@ -43,7 +43,7 @@ np.random.seed(args.seed)
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
-cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 1024, fracdirty=.5, nogan=True, svhn=not args.notsvhn)
+cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 1024, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox(pretrain_dir=args.ckpt, pretrain_url=args.url)
 

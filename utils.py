@@ -282,6 +282,8 @@ def timenow():
 # load pretrained model from dropbox
 def download_pretrained(log_dir, pretrain_dir=None, pretrain_url=None, bin_path=''):
 
+  os.makedirs(log_dir, exist_ok=True)
+
   if pretrain_dir:
     pretrain_url = get_dropbox_url(pretrain_dir, bin_path=bin_path)
 

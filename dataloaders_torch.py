@@ -40,7 +40,7 @@ class CifarGan(torch.utils.data.Dataset):
     return img, label
 
 
-def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False):
+def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False, surface=False):
   '''return loaders for cifar'''
 
   ## transforms
@@ -86,8 +86,9 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     transform_train, transform_test, transform_switchable, transform_tanti = get_transform(datamean, datastd)
     svhn_root = join(data_root, 'SVHN')
     trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_test, download=True)
-    testset  = torchvision.datasets.SVHN(svhn_root, 'test', transform=transform_test, download=True)
-    ganset  = torchvision.datasets.SVHN(svhn_root, 'extra', transform=transform_test, download=True)
+    if not surface:
+      testset  = torchvision.datasets.SVHN(svhn_root, 'test', transform=transform_test, download=True)
+      ganset  = torchvision.datasets.SVHN(svhn_root, 'extra', transform=transform_test, download=True)
 
 
 
@@ -105,7 +106,8 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
 
   ## dataloader objects
   num_workers = 3
-  testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
+  if not surface: testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
+  else: testloader = None
   if poison:
     gansize = int(batchsize * fracdirty)
     trainsize = batchsize - gansize

@@ -1,6 +1,7 @@
 npart = 32
 with open('compute_surface2d_svhn-auto.sh', 'w+') as f:
   f.write('#!/bin/bash\n')
+  f.write('pip install --upgrade comet-ml\n')
   node = 0
   for part in range(npart):
 
