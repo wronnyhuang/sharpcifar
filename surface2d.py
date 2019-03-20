@@ -18,9 +18,9 @@ time = lambda: datetime.now().strftime('%m-%d %H:%M:%S')
 home = os.environ['HOME']
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-span', default=.5, type=float)
+parser.add_argument('-span', default=2, type=float)
 parser.add_argument('-seed', default=1234, type=int)
-parser.add_argument('-res', default=4, type=int)
+parser.add_argument('-res', default=256, type=int)
 parser.add_argument('-part', default=0, type=int)
 parser.add_argument('-npart', default=8, type=int)
 parser.add_argument('-eig', action='store_true')
@@ -84,4 +84,4 @@ for idx, (c1, c2) in enumerate(cfeed):
 with open(exptname+'.pkl', 'wb') as f:
   pickle.dump((xent, acc), f)
 experiment.log_asset(exptname+'.pkl')
-
+os.remove(exptname+'.pkl')
