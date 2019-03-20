@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 # comet stuff
 experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-                        project_name='landscape2d-debug', workspace="wronnyhuang")
+                        project_name='landscape2d', workspace="wronnyhuang")
 exptname = 'span_'+str(args.span)+'-'+args.name+'-part_'+str(args.part)
 experiment.set_name(exptname)
 experiment.log_parameters(vars(args))
