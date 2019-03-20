@@ -20,27 +20,30 @@ home = os.environ['HOME']
 parser = argparse.ArgumentParser()
 parser.add_argument('-span', default=.5, type=float)
 parser.add_argument('-seed', default=1234, type=int)
-parser.add_argument('-res', default=5, type=int)
+parser.add_argument('-res', default=4, type=int)
 parser.add_argument('-part', default=0, type=int)
+parser.add_argument('-npart', default=8, type=int)
 parser.add_argument('-eig', action='store_true')
 parser.add_argument('-ckpt', default=None, type=str)
 parser.add_argument('-url', default=None, type=str)
-parser.add_argument('-name', default='svhn-poison', type=str)
+parser.add_argument('-name', default='svhn_poison', type=str)
 parser.add_argument('-gpu', default='0', type=str)
-parser.add_argument('-svhn', action='store_true')
+parser.add_argument('-notsvhn', action='store_true')
 args = parser.parse_args()
 
 # comet stuff
 experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
                         project_name='landscape2d', workspace="wronnyhuang")
-experiment.set_name('span_'+str(args.span)+'-'+args.name+'-part_'+str(args.part))
+exptname = 'span_'+str(args.span)+'-'+args.name+'-part_'+str(args.part)
+experiment.set_name(exptname)
+experiment.log_parameters(vars(args))
 
 # apply settings
 np.random.seed(args.seed)
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
-cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 512, fracdirty=.5, nogan=True, svhn=args.svhn)
+cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 1024, fracdirty=.5, nogan=True, svhn=not args.notsvhn)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox(pretrain_dir=args.ckpt, pretrain_url=args.url)
 
@@ -69,7 +72,7 @@ weights = evaluator.get_weights()
 
 for idx, (c1, c2) in enumerate(cfeed):
 
-  if np.mod(idx,8) != args.part: continue
+  if np.mod(idx, args.npart) != args.part: continue
   perturbedWeights = [w + c1 * d1 + c2 * d2 for w, d1, d2 in zip(weights, dw1, dw2)]
   evaluator.assign_weights(perturbedWeights)
   xent[idx], acc[idx], _ = evaluator.eval()
@@ -78,8 +81,7 @@ for idx, (c1, c2) in enumerate(cfeed):
   print('point ', idx + 1, 'of', len(cfeed), '| time:', time())
 
 # save plot data and log the figure
-xent = np.reshape(np.array(xent), *cc1.shape)
-with open('part'+str(args.part)+'_data.pkl', 'wb') as f:
+with open(exptname+'.pkl', 'wb') as f:
   pickle.dump((xent, acc), f)
-  experiment.log_asset(file_like_object=f)
+experiment.log_asset(exptname+'.pkl')
 

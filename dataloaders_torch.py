@@ -104,7 +104,7 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     trainset = Dataset(transform=transform_switchable, **args_trainset)
 
   ## dataloader objects
-  num_workers = 1
+  num_workers = 3
   testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
   if poison:
     gansize = int(batchsize * fracdirty)
