@@ -1,0 +1,71 @@
+# Launch an interactive session
+#PBS -l walltime=50:00:00
+#PBS -l select=1:ncpus=20:mpiprocs=1
+#PBS -N sharp0
+#PBS -q standard
+#PBS -j oe
+#PBS -A null
+#PBS -o /gpfs/home/tomg/Fenwick/f0.log
+
+source /gpfs/home/tomg/.bashrc
+cdw
+cd /gpfs/home/tomg/sharpcifar
+
+
+# node 0
+python surface2d.py -name=svhn_poison -gpu=0 -part=0 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid0=$!
+python surface2d.py -name=svhn_clean  -gpu=1 -part=0 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid1=$!
+python surface2d.py -name=svhn_poison -gpu=2 -part=1 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid2=$!
+python surface2d.py -name=svhn_clean  -gpu=3 -part=1 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid3=$!
+
+wait $pid0
+wait $pid1
+wait $pid2
+wait $pid3
+
+python surface2d.py -name=svhn_poison -gpu=0 -part=2 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid0=$!
+python surface2d.py -name=svhn_clean  -gpu=1 -part=2 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid1=$!
+python surface2d.py -name=svhn_poison -gpu=2 -part=3 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid2=$!
+python surface2d.py -name=svhn_clean  -gpu=3 -part=3 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid3=$!
+
+wait $pid0
+wait $pid1
+wait $pid2
+wait $pid3
+
+python surface2d.py -name=svhn_poison -gpu=0 -part=4 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid0=$!
+python surface2d.py -name=svhn_clean  -gpu=1 -part=4 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid1=$!
+python surface2d.py -name=svhn_poison -gpu=2 -part=5 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid2=$!
+python surface2d.py -name=svhn_clean  -gpu=3 -part=5 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid3=$!
+
+wait $pid0
+wait $pid1
+wait $pid2
+wait $pid3
+
+python surface2d.py -name=svhn_poison -gpu=0 -part=6 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid0=$!
+python surface2d.py -name=svhn_clean  -gpu=1 -part=6 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid1=$!
+python surface2d.py -name=svhn_poison -gpu=2 -part=7 -npart=32 -url=https://www.dropbox.com/sh/1h271tqwqy2d6rb/AADImEkt61P8w97s8qy1SLsTa?dl=0 &
+pid2=$!
+python surface2d.py -name=svhn_clean  -gpu=3 -part=7 -npart=32 -url=https://www.dropbox.com/sh/v1unz2j931fsmkr/AADVteaZ51B5Xy0eEsMzlgDWa?dl=0 &
+pid3=$!
+
+wait $pid0
+wait $pid1
+wait $pid2
+wait $pid3
+
