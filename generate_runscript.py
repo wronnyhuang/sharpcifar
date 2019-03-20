@@ -1,8 +1,9 @@
 npart = 32
 with open('compute_surface2d_svhn-auto.sh', 'w+') as f:
   f.write('#!/bin/bash\n')
-  f.write('git clone https://github.com/wronnyhuang/sharpcifar\n')
-  f.write('pip install --upgrade comet-ml\n')
+  f.write('# run these beforehand')
+  f.write('# git clone https://github.com/wronnyhuang/sharpcifar\n')
+  f.write('# pip install --upgrade comet-ml\n')
   node = 0
   for part in range(npart):
 
