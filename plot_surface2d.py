@@ -16,7 +16,7 @@ class args:
 clin = args.span/2 * np.linspace(-1, 1, args.res)
 cc1, cc2 = np.meshgrid(clin, clin)
 cfeed = np.array(list(zip(cc1.ravel(), cc2.ravel())))
-xent = 0 * np.ones(len(cfeed))
+xent = -1 * np.ones(len(cfeed))
 
 for expt in allexperiments:
 
