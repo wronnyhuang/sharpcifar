@@ -1,4 +1,4 @@
-from comet_ml import Experiment, ExistingExperiment
+from comet_ml import Experiment, ExistingExperiment, API
 import numpy as np
 import tensorflow as tf
 from resnet_evaluator import Evaluator
@@ -66,13 +66,27 @@ cc1, cc2 = np.meshgrid(clin, clin)
 cfeed = list(zip(cc1.ravel(), cc2.ravel()))
 
 # loop over all points along surface direction
+weights = evaluator.get_weights()
+
+# get the already-logged data
+print('Gathering already-evaluated indices')
 xent = {}
 acc = {}
-weights = evaluator.get_weights()
+api = API(rest_api_key='W2gBYYtc8ZbGyyNct5qYGR2Gl')
+allexperiments = api.get('wronnyhuang/landscape2d')
+for expt in allexperiments:
+  if exptname != api.get_experiment_other(expt, 'Name')[0]: continue
+  raw = api.get_experiment_metrics_raw(expt)
+  for r in raw:
+    if r['metricName']=='xent':
+      xent[r['step']] = r['metricValue']
+    elif r['metricName']=='acc':
+      acc[r['step']] = r['metricValue']
 
 for idx, (c1, c2) in enumerate(cfeed):
 
   if np.mod(idx, args.npart) != args.part: continue
+  if idx in xent and idx in acc: print('skipping idx '+str(idx)); continue
   perturbedWeights = [w + c1 * d1 + c2 * d2 for w, d1, d2 in zip(weights, dw1, dw2)]
   evaluator.assign_weights(perturbedWeights)
   xent[idx], acc[idx], _ = evaluator.eval()

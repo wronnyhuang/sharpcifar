@@ -9,25 +9,25 @@ api = API(rest_api_key='W2gBYYtc8ZbGyyNct5qYGR2Gl')
 allexperiments = api.get('wronnyhuang/landscape2d')
 
 class args:
-  res = 4
-  span = .5
+  res = 256
+  span = 2
 
 # span
 clin = args.span/2 * np.linspace(-1, 1, args.res)
 cc1, cc2 = np.meshgrid(clin, clin)
 cfeed = np.array(list(zip(cc1.ravel(), cc2.ravel())))
-xent = np.empty(len(cfeed))
+xent = 0 * np.ones(len(cfeed))
 
 for expt in allexperiments:
 
   # filter experiments by name
   name = api.get_experiment_other(expt, 'Name')[0]
-  if 'clean' not in name: continue
+  if 'poison' not in name: continue
 
   # merge data into cfeed
   raw = api.get_experiment_metrics_raw(expt)
   for r in raw:
-    if r['metricName'] != 'xent': continue
+    if r['metricName'] != 'acc': continue
     xent[r['step']] = r['metricValue']
 
 xent = xent.reshape(args.res, args.res)

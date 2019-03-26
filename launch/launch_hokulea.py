@@ -10,7 +10,7 @@ opts = {   "job_name":"hess",
            "cpus_per_node":20,
            "queue":"standard",
            "delete_after_submit":False,  #  Delete the pbs shell script immediately after calling qsub?
-           "call_qsub":False
+           "call_qsub":True
         }
 
 
