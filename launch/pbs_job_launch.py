@@ -112,4 +112,3 @@ def submit_job(command, job_name="job",
         except:
             print("ERROR: Unable to remove pbs script")
     print("")
-
