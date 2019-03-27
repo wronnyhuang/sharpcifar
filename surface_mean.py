@@ -67,6 +67,6 @@ while True:
   period = (time()-tic)/len(cfeed)
   experiment.log_metric('time', period, step=trial)
   print('trail '+str(trial)+', avg_time_per_point '+str(period)+', time_per_surface '+str(period*len(cfeed)))
-  trail += 1
+  trial += 1
 
 
