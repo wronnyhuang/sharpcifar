@@ -40,7 +40,7 @@ class CifarGan(torch.utils.data.Dataset):
     return img, label
 
 
-def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False, surface=False):
+def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False, surface=False, nworker=3):
   '''return loaders for cifar'''
 
   ## transforms
@@ -105,17 +105,16 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     trainset = Dataset(transform=transform_switchable, **args_trainset)
 
   ## dataloader objects
-  num_workers = 3
-  if not surface: testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=num_workers)
+  if not surface: testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=nworker)
   else: testloader = None
   if poison:
     gansize = int(batchsize * fracdirty)
     trainsize = batchsize - gansize
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)
-    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=num_workers)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=nworker)
+    ganloader = torch.utils.data.DataLoader(ganset, batch_size=gansize, shuffle=True, num_workers=nworker)
   else:
     trainsize = batchsize
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=num_workers)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=trainsize, shuffle=True, num_workers=nworker)
     ganloader = None
 
   return trainloader, ganloader, testloader
