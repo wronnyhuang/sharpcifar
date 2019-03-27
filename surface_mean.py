@@ -31,7 +31,7 @@ args = parser.parse_args()
 # comet stuff
 experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
                         project_name='surface_mean', workspace="wronnyhuang")
-exptname = 'span_'+str(args.span)+'-'+args.name
+exptname = 'span_%s-seed_%s-%s' % (args.span, args.seed, args.name)
 experiment.set_name(exptname)
 experiment.log_parameters(vars(args))
 
