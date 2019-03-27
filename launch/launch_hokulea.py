@@ -10,7 +10,7 @@ opts = {   "job_name":"hess",
            "cpus_per_node":20,
            "queue":"standard",
            "delete_after_submit":False,  #  Delete the pbs shell script immediately after calling qsub?
-           "call_qsub":True
+           "call_qsub":False
         }
 
 
@@ -23,7 +23,7 @@ cd /gpfs/scratch/tomg/sharpcifar
 opts["outfile_prefix"] = "/gpfs/scratch/tomg/sharpcifar/launch/pbs_scripts/"
 
 
-with open('jobs1.txt') as f:
+with open('jobs2.txt') as f:
     content = f.readlines()
 
 
@@ -38,13 +38,13 @@ jobs = zip(gpu0,gpu1,gpu2,gpu3)
 
 for i,job in enumerate(jobs):
     command = """
-    %s  &> log/console_gpu=0_job=%d.out &
+    %s  &> log/console1_gpu=0_job=%d.out &
     pid0=$!
-    %s  &> log/console_gpu=1_job=%d.out &
+    %s  &> log/console1_gpu=1_job=%d.out &
     pid1=$!
-    %s  &> log/console_gpu=2_job=%d.out &
+    %s  &> log/console1_gpu=2_job=%d.out &
     pid2=$!
-    %s  &> log/console_gpu=3_job=%d.out &
+    %s  &> log/console1_gpu=3_job=%d.out &
     pid3=$!
     wait $pid0
     wait $pid1
