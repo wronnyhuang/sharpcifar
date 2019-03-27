@@ -61,8 +61,8 @@ while True:
     perturbedWeights = [w + c1 * d1 for w, d1 in zip(weights, dw1)]
     evaluator.assign_weights(perturbedWeights)
     xent, acc, _ = evaluator.eval()
-    experiment.log_metric('xent_'+str(seed), xent, step=idx)
-    experiment.log_metric('acc_'+str(seed), acc, step=idx)
+    experiment.log_metric('xent_'+str(trial), xent, step=idx)
+    experiment.log_metric('acc_'+str(trial), acc, step=idx)
 
   period = (time()-tic)/len(cfeed)
   experiment.log_metric('time', period, step=trial)
