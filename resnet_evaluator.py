@@ -35,6 +35,10 @@ class Evaluator(object):
     self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, gpu_options=tf.GPUOptions(allow_growth=True)))
     self.sess.run(tf.global_variables_initializer())
 
+    # build assign op to prevent memory leak from creating the node on each iteration
+    self.inputweights = [tf.zeros_like(t) for t in tf.trainable_variables()]
+    self.assignop = [tf.assign(t,w) for t,w in zip(tf.trainable_variables(), self.inputweights)]
+
   def restore_weights(self, log_dir):
 
     ckpt_file = join(log_dir, 'model.ckpt')
@@ -63,7 +67,7 @@ class Evaluator(object):
     print('Ckpt restored from', pretrain_dir, pretrain_url)
 
   def assign_weights(self, weights):
-    self.sess.run([tf.assign(t,w) for t,w in zip(tf.trainable_variables(), weights)])
+    self.sess.run(self.assignop)
     self.eigval = self.eigvec = self.projvec_corr = None
 
   def get_weights(self):
