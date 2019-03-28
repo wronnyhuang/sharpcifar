@@ -1,7 +1,7 @@
 from pbs_job_launch import submit_job
 
 opts = {   "job_name":"hess",
-            "hours":20,
+            "hours":40,
            "mins":3,
            "secs":0,
            "account":"MHPCC96670DA1",   #"USNAM37766Z80",
