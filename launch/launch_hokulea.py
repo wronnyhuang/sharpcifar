@@ -23,7 +23,7 @@ cd /gpfs/scratch/tomg/sharpcifar
 opts["outfile_prefix"] = "/gpfs/scratch/tomg/sharpcifar/launch/pbs_scripts/"
 
 
-with open('jobs2.txt') as f:
+with open('jobs3.txt') as f:
     content = f.readlines()
 
 
@@ -38,13 +38,13 @@ jobs = zip(gpu0,gpu1,gpu2,gpu3)
 
 for i,job in enumerate(jobs):
     command = """
-    %s  &> log/console1_gpu=0_job=%d.out &
+    %s  &> log/console3_gpu=0_job=%d.out &
     pid0=$!
-    %s  &> log/console1_gpu=1_job=%d.out &
+    %s  &> log/console3_gpu=1_job=%d.out &
     pid1=$!
-    %s  &> log/console1_gpu=2_job=%d.out &
+    %s  &> log/console3_gpu=2_job=%d.out &
     pid2=$!
-    %s  &> log/console1_gpu=3_job=%d.out &
+    %s  &> log/console3_gpu=3_job=%d.out &
     pid3=$!
     wait $pid0
     wait $pid1
