@@ -1,4 +1,4 @@
-# from comet_ml import Experiment, ExistingExperiment, API
+from comet_ml import Experiment, ExistingExperiment, API
 import numpy as np
 import tensorflow as tf
 from resnet_evaluator import Evaluator
@@ -29,11 +29,11 @@ parser.add_argument('-notsvhn', action='store_true')
 args = parser.parse_args()
 
 # comet stuff
-# experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
-#                         project_name='surface_mean', workspace="wronnyhuang")
-# exptname = 'span_%s-seed_%s-%s' % (args.span, args.seed, args.name)
-# experiment.set_name(exptname)
-# experiment.log_parameters(vars(args))
+experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
+                        project_name='surface_mean', workspace="wronnyhuang")
+exptname = 'span_%s-seed_%s-%s' % (args.span, args.seed, args.name)
+experiment.set_name(exptname)
+experiment.log_parameters(vars(args))
 
 # apply settings
 np.random.seed(args.seed)
@@ -58,7 +58,9 @@ while True:
   for idx, c1 in enumerate(cfeed):
 
     perturbedWeights = [w + c1 * d1 for w, d1 in zip(weights, dw1)]
+    tic1 = time()
     evaluator.assign_weights(perturbedWeights)
+    print(time()-tic1)
     xent, acc, _ = evaluator.eval()
     experiment.log_metric('xent_'+str(trial), xent, step=idx)
     experiment.log_metric('acc_'+str(trial), acc, step=idx)

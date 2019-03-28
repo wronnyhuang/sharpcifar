@@ -67,7 +67,7 @@ class Evaluator(object):
     print('Ckpt restored from', pretrain_dir, pretrain_url)
 
   def assign_weights(self, weights):
-    self.sess.run(self.assignop)
+    self.sess.run(self.assignop, {node: value for node, value in zip(self.inputweights, weights)})
     self.eigval = self.eigvec = self.projvec_corr = None
 
   def get_weights(self):
