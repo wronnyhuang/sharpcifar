@@ -52,24 +52,20 @@ weights = evaluator.get_weights()
 
 trial = 0
 while True:
-  # plot along which direction
-  dw1 = evaluator.get_random_dir()
 
+  dw1 = evaluator.get_random_dir()
+  tic = time()
   for idx, c1 in enumerate(cfeed):
 
     perturbedWeights = [w + c1 * d1 for w, d1 in zip(weights, dw1)]
-    tic = time()
     evaluator.assign_weights(perturbedWeights)
-    tassign = time()-tic
-    tic = time()
     xent, acc, _ = evaluator.eval()
-    teval = time()-tic
-    print('idx %s, tassign %s, teval %s'%(idx,tassign,teval))
-    # experiment.log_metric('xent_'+str(trial), xent, step=idx)
-    # experiment.log_metric('acc_'+str(trial), acc, step=idx)
+    experiment.log_metric('xent_'+str(trial), xent, step=idx)
+    experiment.log_metric('acc_'+str(trial), acc, step=idx)
 
-  # experiment.log_metric('time', period, step=trial)
-  # print('trail '+str(trial)+', avg_time_per_point '+str(period)+', time_per_surface '+str(period*len(cfeed)))
+  ttrial = time()-tic
+  experiment.log_metric('ttrial', ttrial, step=trial)
+  print('trial %s, ttrial %s, tpoint %s'%(trial, ttrial, ttrial/len(cfeed)))
   trial += 1
 
 
