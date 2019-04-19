@@ -46,7 +46,7 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
   ## transforms
   def get_transform(datamean, datastd):
     transform_train = transforms.Compose([
-      transforms.RandomCrop(32, padding=4),
+      # transforms.RandomCrop(32, padding=4),
       transforms.RandomHorizontalFlip(),
       transforms.ToTensor(),
       transforms.Normalize(datamean, datastd),
@@ -85,7 +85,8 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     datamean, datastd = [0.43768212, 0.44376972, 0.47280444], [0.1200278, 0.12307685, 0.10515254]
     transform_train, transform_test, transform_switchable, transform_tanti = get_transform(datamean, datastd)
     svhn_root = join(data_root, 'SVHN')
-    trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_test, download=True)
+    # trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_test, download=True)
+    trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_train, download=True)
     if not surface:
       testset  = torchvision.datasets.SVHN(svhn_root, 'test', transform=transform_test, download=True)
       ganset  = torchvision.datasets.SVHN(svhn_root, 'extra', transform=transform_test, download=True)

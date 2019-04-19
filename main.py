@@ -19,7 +19,6 @@ from subprocess import PIPE, STDOUT
 from glob import glob
 from shutil import rmtree
 import socket
-import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 # options
@@ -193,8 +192,8 @@ def train():
           experiment.log_metrics(metrics, step=global_step)
 
           # plot example train image
-          plt.imshow(cleanimages[0])
-          plt.title(cleantarget[0])
+          # plt.imshow(cleanimages[0])
+          # plt.title(cleantarget[0])
           experiment.log_figure()
 
           # log progress

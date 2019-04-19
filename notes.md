@@ -47,4 +47,14 @@ https://www.comet.ml/wronnyhuang/poisoncifar/fbc0b71d2aff4e0a96ebe580fb81246f/ch
 Loss surface of the two networks along random direction
 https://www.comet.ml/wronnyhuang/landscape/4b4775c180e043efa3b1e24505781fe3/chart
 
+## SVHN train with data aug for micah goldblum
+Both resulted in pretty high eval accs
 
+with weight decay
+https://www.comet.ml/wronnyhuang/poisoncifar/511e554cba1046eaae5b851a7767521e
+
+w/o weight decay
+https://www.comet.ml/wronnyhuang/poisoncifar/b7e278fff0b8468d90a84dc90193c2df
+
+Let's now see their loss surface
+,
