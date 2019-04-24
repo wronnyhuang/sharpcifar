@@ -26,6 +26,7 @@ parser.add_argument('-ckpt', default=None, type=str)
 parser.add_argument('-url', default=None, type=str)
 parser.add_argument('-name', default='svhn_poison', type=str)
 parser.add_argument('-notsvhn', action='store_true')
+parser.add_argument('-ntrial', default=None, type=int)
 args = parser.parse_args()
 
 # comet stuff
@@ -51,7 +52,7 @@ cfeed = args.span/2 * np.linspace(-1, 1, args.res)
 weights = evaluator.get_weights()
 
 trial = 0
-while True:
+while ntrial is None or trial < ntrial:
 
   dw1 = evaluator.get_random_dir()
   tic = time()
