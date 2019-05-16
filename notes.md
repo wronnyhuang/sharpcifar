@@ -56,5 +56,5 @@ https://www.comet.ml/wronnyhuang/poisoncifar/511e554cba1046eaae5b851a7767521e
 w/o weight decay
 https://www.comet.ml/wronnyhuang/poisoncifar/b7e278fff0b8468d90a84dc90193c2df
 
-Let's now see their loss surface
-,
+Let's now see their loss surface: no difference in loss surface bewtween aug and no aug
+

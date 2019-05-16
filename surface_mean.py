@@ -52,16 +52,16 @@ cfeed = args.span/2 * np.linspace(-1, 1, args.res)
 weights = evaluator.get_weights()
 
 trial = 0
-while ntrial is None or trial < ntrial:
+while args.ntrial is None or trial < args.ntrial:
 
   dw1 = evaluator.get_random_dir()
   tic = time()
   for idx, c1 in enumerate(cfeed):
 
+    print('%s of %s' % (1+idx, len(cfeed)))
     perturbedWeights = [w + c1 * d1 for w, d1 in zip(weights, dw1)]
     tic1 = time()
     evaluator.assign_weights(perturbedWeights)
-    print(time()-tic1)
     xent, acc, _ = evaluator.eval()
     experiment.log_metric('xent_'+str(trial), xent, step=idx)
     experiment.log_metric('acc_'+str(trial), acc, step=idx)

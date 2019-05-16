@@ -101,7 +101,7 @@ def train():
   if not (ckpt_state and ckpt_state.model_checkpoint_path):
     print('TRAIN: No pretrained model. Initialized from random')
   else:
-    saver.restore(sess, ckpt_file)
+    
     print('TRAIN: Loading checkpoint %s', ckpt_state.model_checkpoint_path)
 
   print('TRAIN: Start')

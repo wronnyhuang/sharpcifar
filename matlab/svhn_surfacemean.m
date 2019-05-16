@@ -5,8 +5,6 @@ noldspan = 30;
 oldspan = linspace(-1,1,n);
 span = linspace(-1,1,nspan);
 
-
-
 bins = linspace(-5,25,50);
 density = zeros(noldspan, numel(bins) - 1);
 avg = zeros(1, noldspan);
@@ -21,3 +19,8 @@ imagesc(span, bins, density'); hold on;
 plot(span, log10(avg)); hold off;
 set(gca, 'clim', [0 700]);
 set(gca, 'ydir', 'normal')
+
+%% find expectation of radius
+
+[~, centers] = min(mat');
+indices = repmat(linspace(1, n), [m, 1])
