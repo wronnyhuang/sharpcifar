@@ -40,7 +40,7 @@ class CifarGan(torch.utils.data.Dataset):
     return img, label
 
 
-def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False, surface=False, nworker=3):
+def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False, noaugment=False, nogan=True, cinic=False, tanti=False, svhn=False, surface=False, nworker=1):
   '''return loaders for cifar'''
 
   ## transforms
@@ -86,10 +86,10 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     transform_train, transform_test, transform_switchable, transform_tanti = get_transform(datamean, datastd)
     svhn_root = join(data_root, 'SVHN')
     # trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_test)
-    trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_train)
+    trainset = torchvision.datasets.SVHN(svhn_root, 'train', transform=transform_train, download=True)
     if not surface:
-      testset  = torchvision.datasets.SVHN(svhn_root, 'test', transform=transform_test)
-      ganset  = torchvision.datasets.SVHN(svhn_root, 'extra', transform=transform_test)
+      testset  = torchvision.datasets.SVHN(svhn_root, 'test', transform=transform_test, download=True)
+      ganset  = torchvision.datasets.SVHN(svhn_root, 'extra', transform=transform_test, download=True)
 
 
 
