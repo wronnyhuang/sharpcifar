@@ -164,6 +164,7 @@ class ResNet(object):
 
     # build gradients for the regular loss with weight decay but no spectral radius
     trainable_variables = tf.trainable_variables()
+    self.weight_norm = tf.global_norm(trainable_variables)
     self.loss_orig = self.xent + self._decay() #+ specreg._spec(self, self.xent)
     tstart = time.time()
     grads = tf.gradients(self.loss_orig, trainable_variables)

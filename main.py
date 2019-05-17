@@ -39,6 +39,7 @@ parser.add_argument('-upload', action='store_true')
 parser.add_argument('-randname', action='store_true')
 # file names
 parser.add_argument('-log_root', default='debug', type=str, help='Directory to keep the checkpoints.')
+parser.add_argument('-tag', default=None, type=str, help='Project tag')
 parser.add_argument('-ckpt_root', default='/root/ckpt', type=str, help='Parents directory of log_root')
 parser.add_argument('-bin_path', default='/root/bin', type=str, help='bin: directory of helpful scripts')
 parser.add_argument('-cifar100', action='store_true')
@@ -128,8 +129,8 @@ def train():
         # imshow(utils.imagesc(dirtyimages[30])); show()
 
         # run the graph
-        _, global_step, loss, predictions, acc, xent, xentPerExample = sess.run(
-          [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.xentPerExample],
+        _, global_step, loss, predictions, acc, xent, xentPerExample, weight_norm = sess.run(
+          [model.train_op, model.global_step, model.loss, model.predictions, model.precision, model.xent, model.xentPerExample, model.weight_norm],
           feed_dict={model.lrn_rate: scheduler._lrn_rate,
                      model._images: batchimages,
                      model.labels: batchtarget,
@@ -156,6 +157,7 @@ def train():
       metrics['clean/acc_full'], metrics['dirty/acc_full'], metrics['clean_minus_dirty_full'], metrics['clean/xent_full'], metrics['dirty/xent_full'] = \
         accumulator.flush()
       experiment.log_metrics(metrics, step=global_step)
+      experiment.log_metric('weight_norm', weight_norm)
       print('TRAIN: epoch', epoch, 'finished. cleanacc', metrics['clean/acc_full'], 'dirtyacc', metrics['dirty/acc_full'])
 
     else: # use hessian
@@ -167,9 +169,9 @@ def train():
         cleanimages, cleantarget = utils.cifar_torch_to_numpy(cleanimages, cleantarget, args.num_classes)
 
         # run the graph
-        gradsSpecCorr, valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr = \
+        gradsSpecCorr, valtotEager, bzEager, valEager, _, _, global_step, loss, predictions, acc, xent, grad_norm, valEager, projvec_corr, weight_norm = \
           sess.run([model.gradsSpecCorr, model.valtotEager, model.bzEager, model.valEager, model.train_op, model.projvec_op, model.global_step,
-            model.loss, model.predictions, model.precision, model.xent, model.grad_norm, model.valEager, model.projvec_corr],
+            model.loss, model.predictions, model.precision, model.xent, model.grad_norm, model.valEager, model.projvec_corr, model.weight_norm],
             feed_dict={model.lrn_rate: scheduler._lrn_rate,
                        model._images: cleanimages,
                        model.labels: cleantarget,
@@ -181,7 +183,7 @@ def train():
         accumulator.accum(predictions, cleanimages, cleantarget)
         scheduler.after_run(global_step, len(cleanloader))
 
-        if np.mod(global_step, 150)==0: # record metrics and save ckpt so evaluator can be up to date
+        if np.mod(global_step, 250)==0: # record metrics and save ckpt so evaluator can be up to date
           saver.save(sess, ckpt_file)
           metrics = {}
           metrics['train/val'], metrics['train/projvec_corr'], metrics['spec_coef'], metrics['lr'], metrics['train/loss'], metrics['train/acc'], metrics['train/xent'], metrics['train/grad_norm'] = \
@@ -190,11 +192,13 @@ def train():
           if 'timeold' in locals(): metrics['time_per_step'] = (time()-timeold)/150
           timeold = time()
           experiment.log_metrics(metrics, step=global_step)
+          experiment.log_metric('weight_norm', weight_norm)
+          
 
           # plot example train image
           # plt.imshow(cleanimages[0])
           # plt.title(cleantarget[0])
-          experiment.log_figure()
+          # experiment.log_figure()
 
           # log progress
           print('TRAIN: loss: %.3f\tacc: %.3f\tval: %.3f\tcorr: %.3f\tglobal_step: %d\tepoch: %d\ttime: %s' % (loss, acc, valEager, projvec_corr, global_step, epoch, timenow()))
@@ -221,7 +225,7 @@ def train():
   print('sigoptObservation='+str(bestEvalPrecision))
 
   # uploader to dropbox
-  if args.upload: os.system('dbx upload '+log_dir+' ckpt/')
+  if args.upload: os.system('dbx upload '+log_dir+' ' + join('ckpt/poisoncifar', projname) + '/')
 
 
 def evaluate():
@@ -283,7 +287,7 @@ if __name__ == '__main__':
 
 
   # make log directory
-  log_dir = join(args.ckpt_root, args.log_root)
+  log_dir = join(args.ckpt_root, 'poisoncifar', args.log_root)
   if not args.resume and args.mode=='train' and exists(log_dir): rmtree(log_dir)
   os.makedirs(log_dir, exist_ok=True)
   print('log_root: '+args.log_root)
@@ -291,7 +295,10 @@ if __name__ == '__main__':
   # comet stuff for logging
   if ( args.mode=='train' and not args.resume ) or not exists(join(log_dir, 'comet_expt_key.txt')):
     projname = 'poisoncifar' if args.poison else 'hesscifar'
+    projname = 'poisoncifar' # hardcoded this temporarily for poisonfrac sweep
     projname = projname + '-sigopt' if args.sigopt else projname
+    tag = '-' + args.tag if args.tag else None
+    projname = projname + tag
     experiment = Experiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", parse_args=False,
                             project_name=projname, workspace="wronnyhuang")
     with open(join(log_dir, 'comet_expt_key.txt'), 'w+') as f:
