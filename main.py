@@ -3,7 +3,7 @@ import tensorflow as tf
 import os
 from os.path import join, basename, exists
 import argparse
-from cometml_api import api as cometapi
+# from cometml_api import api as cometapi
 from time import time, sleep
 from datetime import datetime
 import six
@@ -79,7 +79,7 @@ def train():
   os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu # eval may or may not be on gpu
 
   # build graph, dataloader
-  cleanloader, dirtyloader, _ = get_loader('/root/datasets', batchsize=args.batch_size, poison=args.poison, svhn=args.svhn,
+  cleanloader, dirtyloader, _ = get_loader(join(home, 'datasets'), batchsize=args.batch_size, poison=args.poison, svhn=args.svhn,
                                            fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment,
                                            nogan=args.nogan, cinic=args.cinic, tanti=args.tanti)
   dirtyloader = utils.itercycle(dirtyloader)
@@ -209,30 +209,36 @@ def train():
       experiment.log_metrics(metrics, step=global_step)
       print('TRAIN: epoch', epoch, 'finished. clean/acc', metrics['clean/acc'])
 
-    # restart evaluation process if it somehow died or restart every n epoch
-    if valid.returncode != None or np.mod(epoch+1, 20)==0:
+    # log ckpt to comet
+    if not epoch % 20:
+      if args.upload:
+        comet.log_asset_folder(log_dir)
+  
+    # restart evaluation process if it somehow died
+    if valid.returncode != None:
       valid.kill(); sleep(1)
       valid = subprocess.Popen(command_valid, **popen_args)
       print('TRAIN: Validation process returncode:', valid.returncode)
       print('===> Restarted validation process, new PID', valid.pid)
 
-
-  # retrieve data from comet
-  cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
-  metricSummaries = cometapi.get_raw_metric_summaries(experiment.get_key())
-  metricSummaries = {b.pop('name'): b for b in metricSummaries}
-  bestEvalPrecision = metricSummaries['eval/acc']['valueMax']
-  print('sigoptObservation='+str(bestEvalPrecision))
-
   # uploader to dropbox
-  if args.upload: os.system('dbx upload '+log_dir+' ' + join('ckpt/poisoncifar', projname) + '/')
+  if args.upload:
+    comet.log_asset_folder(log_dir)
+    os.system('dbx upload '+log_dir+' ' + join('ckpt/poisoncifar', projname) + '/')
+
+  # # retrieve data from comet
+  # cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')
+  # metricSummaries = cometapi.get_raw_metric_summaries(experiment.get_key())
+  # metricSummaries = {b.pop('name'): b for b in metricSummaries}
+  # bestEvalPrecision = metricSummaries['eval/acc']['valueMax']
+  # print('sigoptObservation='+str(bestEvalPrecision))
 
 
 def evaluate():
 
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1' if not args.gpu_eval else args.gpu # run eval on cpu
-  cleanloader, _, testloader = get_loader('/root/datasets', batchsize=args.batch_size, fracdirty=args.fracdirty,
-                                          cifar100=args.cifar100, cinic=args.cinic, svhn=args.svhn)
+  cleanloader, _, testloader = get_loader(join(home, 'datasets'), batchsize=args.batch_size, fracdirty=args.fracdirty,
+                                          cifar100=args.cifar100, cinic=args.cinic, svhn=args.svhn, nworker=0)
 
   print('===================> EVAL: STARTING SESSION at '+timenow())
   evaluator = Evaluator(testloader, args)
@@ -287,6 +293,7 @@ if __name__ == '__main__':
 
 
   # make log directory
+  home = os.environ['HOME']
   log_dir = join(args.ckpt_root, 'poisoncifar', args.log_root)
   if not args.resume and args.mode=='train' and exists(log_dir): rmtree(log_dir)
   os.makedirs(log_dir, exist_ok=True)
@@ -308,14 +315,14 @@ if __name__ == '__main__':
     experiment = ExistingExperiment(api_key="vPCPPZrcrUBitgoQkvzxdsh9k", previous_experiment=comet_key, parse_args=False)
 
   # log host name
-  hostlog = '/root/misc/hostname.log'
-  if exists(hostlog): hostname = open(hostlog).read()
-  else: hostname = socket.gethostname()
-  print('====================> HOST: '+hostname)
+  # hostlog = '/root/misc/hostname.log'
+  # if exists(hostlog): hostname = open(hostlog).read()
+  # else: hostname = socket.gethostname()
+  # print('====================> HOST: '+hostname)
 
   # log basic hyper params
   experiment.set_name(args.log_root)
-  experiment.log_other('hostmachine', hostname)
+  # experiment.log_other('hostmachine', hostname)
   experiment.log_other('sysargv', ' '.join(sys.argv[1:]))
   if args.log_root=='debug': experiment.log_other('debug', True);
 
