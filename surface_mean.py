@@ -28,6 +28,8 @@ parser.add_argument('-name', default='svhn_poison', type=str)
 parser.add_argument('-projname', default='surface_mean', type=str)
 parser.add_argument('-notsvhn', action='store_true')
 parser.add_argument('-ntrial', default=None, type=int)
+parser.add_argument('-batchsize', default=2**13, type=int)
+parser.add_argument('-nworker', default=8, type=int)
 args = parser.parse_args()
 
 # comet stuff
@@ -42,8 +44,8 @@ experiment.log_parameters(vars(args))
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
-cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 2**13, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=8)
-# cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2**10, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=8)
+# cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 2**13, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=8)
+cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2**args.batchsize, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=args.nworker)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox(pretrain_dir=args.ckpt, pretrain_url=args.url)
 
