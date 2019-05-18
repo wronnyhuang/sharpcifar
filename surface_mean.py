@@ -38,7 +38,7 @@ experiment.set_name(args.name)
 experiment.log_parameters(vars(args))
 
 # apply settings
-np.random.seed(args.seed)
+# np.random.seed(args.seed)
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
