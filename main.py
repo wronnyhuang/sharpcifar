@@ -83,9 +83,9 @@ def train():
                                            fracdirty=args.fracdirty, cifar100=args.cifar100, noaugment=args.noaugment,
                                            nogan=args.nogan, cinic=args.cinic, tanti=args.tanti)
   dirtyloader = utils.itercycle(dirtyloader)
-  print('Validation check: returncode is '+str(valid.returncode))
+  # print('Validation check: returncode is '+str(valid.returncode))
   model = resnet_model.ResNet(args, args.mode)
-  print('Validation check: returncode is '+str(valid.returncode))
+  # print('Validation check: returncode is '+str(valid.returncode))
 
   # initialize session
   print('===================> TRAIN: STARTING SESSION at '+timenow())
@@ -215,11 +215,11 @@ def train():
         experiment.log_asset_folder(log_dir)
   
     # restart evaluation process if it somehow died
-    if valid.returncode != None:
-      valid.kill(); sleep(1)
-      valid = subprocess.Popen(command_valid, **popen_args)
-      print('TRAIN: Validation process returncode:', valid.returncode)
-      print('===> Restarted validation process, new PID', valid.pid)
+    # if valid.returncode != None:
+    #   valid.kill(); sleep(1)
+    #   valid = subprocess.Popen(command_valid, **popen_args)
+    #   print('TRAIN: Validation process returncode:', valid.returncode)
+    #   print('===> Restarted validation process, new PID', valid.pid)
 
   # uploader to dropbox
   if args.upload:
