@@ -72,7 +72,7 @@ parser.add_argument('-pretrain_dir', default=None, type=str, help='remote direct
 def train():
 
   # start evaluation process
-  popen_args = dict(shell=True, universal_newlines=True, stdout=PIPE, stderr=STDOUT)
+  popen_args = dict(shell=True, universal_newlines=True, encoding='utf-8') # , stdout=PIPE, stderr=STDOUT, )
   command_valid = 'python main.py -mode=eval ' + ' '.join(['-log_root='+args.log_root] + sys.argv[1:])
   valid = subprocess.Popen(command_valid, **popen_args)
   print('EVAL: started validation from train process using command:', command_valid)
