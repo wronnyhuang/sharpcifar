@@ -212,7 +212,7 @@ def train():
     # log ckpt to comet
     if not epoch % 20:
       if args.upload:
-        comet.log_asset_folder(log_dir)
+        experiment.log_asset_folder(log_dir)
   
     # restart evaluation process if it somehow died
     if valid.returncode != None:
