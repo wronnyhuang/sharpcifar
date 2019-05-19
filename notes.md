@@ -58,3 +58,15 @@ https://www.comet.ml/wronnyhuang/poisoncifar/b7e278fff0b8468d90a84dc90193c2df
 
 Let's now see their loss surface: no difference in loss surface bewtween aug and no aug
 
+# Generating results for nips
+
+swept the poisonfrac through 7 different values of `fracdirty` (exponentially scaled)
+https://www.comet.ml/wronnyhuang/poisoncifar-poisonfrac-1
+and their model parameters are in dropbox here https://www.dropbox.com/home/ckpt/poisoncifar
+
+rollouts for each of these 8 networks are being generated
+https://www.comet.ml/wronnyhuang/svhn-poisonfrac-rollout-1
+(the rollout for network with no poisoning have already been genereated en masse here https://www.comet.ml/wronnyhuang/surface_mean)
+
+
+

@@ -45,7 +45,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # load data and model
 # cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2 * 2**13, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=8)
-cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=2**args.batchsize, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=args.nworker)
+cleanloader, _, _ = get_loader(join(home, 'datasets'), batchsize=args.batchsize, fracdirty=.5, nogan=True, svhn=not args.notsvhn, surface=True, nworker=args.nworker)
 evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox(pretrain_dir=args.ckpt, pretrain_url=args.url)
 
@@ -72,6 +72,7 @@ while args.ntrial is None or trial < args.ntrial:
 
   ttrial = time()-tic
   experiment.log_metric('ttrial', ttrial, step=trial)
+  experiment.log_metric('trial', trial, step=trial)
   print('trial %s, ttrial %s, tpoint %s'%(trial, ttrial, ttrial/len(cfeed)))
   trial += 1
 
