@@ -2,9 +2,8 @@
 # git clone https://github.com/wronnyhuang/sharpcifar
 # pip install --upgrade comet-ml
 
-# adjust the -gpu argument to another gpu index if needed
 # two processes per gpu please (so 32 gpus total as there are 64 processes here)
-# the longer you run it the better but 24 hours would be good
+# the longer you run it the better but 20 hours would be good
 
 python surface_mean.py -gpu=0 -projname=svhn-poisonfrac-rollout-1 -name=svhn-poisonfrac-2  -batchsize=1024 -nworker=4 -seed=102 -url=https://www.dropbox.com/sh/5hxwmtxr3pdbvxt/AAAWVKmtijzDeeHiCDOeuY21a?dl=0
 python surface_mean.py -gpu=0 -projname=svhn-poisonfrac-rollout-1 -name=svhn-poisonfrac-3  -batchsize=1024 -nworker=4 -seed=102 -url=https://www.dropbox.com/sh/qohwprpjqgtpvsl/AACr078AhOeN8DeadE5ihDisa?dl=0
