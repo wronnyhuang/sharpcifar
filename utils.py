@@ -167,7 +167,8 @@ def maybe_download(source_url, filename, target_directory, filetype='folder', fo
     if not os.path.exists(target_directory):
       os.system('mkdir -p '+target_directory)
     if filetype=='folder':
-      os.system('curl -L '+source_url+' > '+filename+'.zip')
+      # os.system('curl -L '+source_url+' > '+filename+'.zip')
+      os.system('wget --max-redirect=20 -O ' + source_url + ' ' + filename + '.zip')
       os.system('unzip -o '+filename+'.zip'+' -d '+filepath)
       os.system('rm '+filename+'.zip')
     elif filetype=='tar':
