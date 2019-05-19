@@ -57,7 +57,7 @@ def get_loader(data_root, batchsize, poison=False, fracdirty=.5, cifar100=False,
     ])
     transform_tanti = transforms.Compose([
       # transforms.RandomCrop(32, padding=6),
-      transforms.Lambda(transforms.functional.hflip),
+      # transforms.Lambda(transforms.functional.hflip), # temporary
       # transforms.RandomRotation(5),
       transforms.ToTensor(),
       transforms.Normalize(datamean, datastd),
