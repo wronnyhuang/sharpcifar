@@ -80,24 +80,3 @@ experiment.log_figure(name)
 unique = utils.timenow()
 pickle.dump((cfeed, xent), open(unique, 'wb'))
 experiment.log_asset(file_path=unique, file_name=name+'.pkl')
-
-
-# clin = 1.5 * np.linspace(-1, 1,40)
-# cc1, cc2 = np.meshgrid(clin, clin)
-# cfeed = np.column_stack([cc1.ravel(), cc2.ravel()])
-#
-# xent = []; acc = []
-# for i, (c1, c2) in enumerate(cfeed):
-#
-#   perturbedWeights = [w + c1 * d1 + c2 * d2 for w, d1, d2 in zip(weights, dw1, dw2)]
-#   evaluator.assign_weights(perturbedWeights)
-#   xent_i, acc_i, _ = evaluator.eval()
-#   xent = xent + [xent_i]
-#   acc = acc + [acc_i]
-#   print('progress:', i+1, 'of', len(cfeed), '| time:', time())
-#
-# xent = np.reshape(np.array(xent), cc1.shape)
-# plt.contourf(cc1, cc2, xent); plt.colorbar()
-# plt.savefig('for_comet.jpg')
-# experiment.log_image('for_comet.jpg')
-

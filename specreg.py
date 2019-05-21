@@ -71,7 +71,7 @@ def _spec(net, xentPerExample, is_accum=False, nohess=False, randvec=False):
       net.accum_op = [a.assign_add(g) for a,g in zip(hessvecprodAccum, hessVecProd)] + [batchsizeAccum.assign_add(batchsize)]
 
     # compute the projected projection vector using accumulated hvps
-    nextProjvec = compute_nextProjvec(net.projvec, hessvecprodAccum, net.projvec_beta)
+    nextProjvec = compute_nextProjvec(net.projvec, hessvecprodAccum, net.projvec_beta, randvec=randvec)
     print('nextProjvec using accumed hvp')
 
     # hooks for total eigenvalue, batch size, and eigenvalue

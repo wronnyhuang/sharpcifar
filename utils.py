@@ -114,7 +114,7 @@ def hessian_fullbatch(sess, model, loader, num_classes=10, is_training_dirty=Fal
       else:
         # sess.run(model.accum_op, {model._images: batchimages, model.labels: batchtarget})
         _, valtotAccum, bzAccum, valAccum = \
-          sess.run([model.accum_op, model.valtotAccum, model.bzAccum, model.valAccum, model.valtotEager, model.bzEager, model.valEager],
+          sess.run([model.accum_op, model.valtotAccum, model.bzAccum, model.valAccum],
             {model._images: batchimages, model.labels: batchtarget})
 
         # print('valtotEager:', valtotEager, ', bzEager:', bzEager, ', valEager:', valEager)

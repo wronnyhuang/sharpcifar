@@ -10,7 +10,7 @@ import os
 
 class Evaluator(object):
 
-  def __init__(self, loader, args=None):
+  def __init__(self, loader, args=None, curv=False):
 
     class Args():
       num_classes = 10
@@ -24,11 +24,13 @@ class Evaluator(object):
       specreg_bn = False
       normalizer = 'filtnorm'
       bin_path = '/root/bin'
+      weight_decay = 0.0
     self.args = Args() if args==None else args
+    if curv: self.args.randvec = True
     self.home = os.environ['HOME']
 
     # model and data loader
-    self.model = resnet_model.ResNet(self.args, mode='eval')
+    self.model = resnet_model.ResNet(self.args, mode='eval' if not curv else 'curv')
     self.loader = loader
 
     # session
@@ -132,8 +134,3 @@ class Evaluator(object):
       randdir = randdir + [layerR]
 
     return randdir
-
-
-
-
-

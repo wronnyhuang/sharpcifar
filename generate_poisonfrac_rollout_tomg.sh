@@ -1,4 +1,4 @@
-# run these beforehand
+# run these beforehand (make sure to pull git changes!)
 # git clone https://github.com/wronnyhuang/sharpcifar
 # pip install --upgrade comet-ml
 

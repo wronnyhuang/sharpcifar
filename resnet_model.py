@@ -161,6 +161,10 @@ class ResNet(object):
       # add spectral radius calculations
       specreg._spec(self, self.xentPerExample, True, self.args.nohess, self.args.randvec)
       return
+    
+    elif self.mode == 'curv':
+      specreg._spec(self, self.xentPerExample, True, self.args.nohess, self.args.randvec)
+      return
 
     # build gradients for the regular loss with weight decay but no spectral radius
     trainable_variables = tf.trainable_variables()
