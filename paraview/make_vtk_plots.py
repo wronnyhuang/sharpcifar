@@ -22,6 +22,8 @@ import pickle
 for filename in filenames:
     with open(filename, 'rb') as f:
         data = pickle.load(f)
+        print('shape = %s'%(data['xent'].shape,))
     filename_no_extension = filename[0:-4]
     #h52vtp.h5_to_vtp(mat['data'],vtp_file=file_name[0:-4], log=True, zmax=1000)
-    h52vtp.h5_to_vtp(data['xent'],vtp_file=filename_no_extension, log=True, zmax=1000, chopxmin=140, chopxmax=00, chopymin=70, chopymax=70, interp=500)
+    #h52vtp.h5_to_vtp(data['xent'],vtp_file=filename_no_extension, log=True, zmax=1000, chopxmin=128, chopxmax=00, chopymin=64, chopymax=64, interp=500)
+    h52vtp.h5_to_vtp(data['xent'],vtp_file=filename_no_extension, log=True, zmax=1000, chopxmin=128, chopxmax=60, chopymin=94, chopymax=94, interp=500)
