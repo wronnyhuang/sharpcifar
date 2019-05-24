@@ -18,6 +18,7 @@ for i = 1:4
   surf(data, 'facealpha', .8, 'edgecolor', 'none');
   colorbar()
   title(strrep(name,'_','\_'))
+  min(data(:))
 end
 saveas(gcf, ['svhn_surfaces.fig']);
 saveas(gcf, ['svhn_surfaces.png']);

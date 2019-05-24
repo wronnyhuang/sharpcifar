@@ -1,0 +1,647 @@
+
+
+
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+% \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading neurips_2018
+
+% ready for submission
+\usepackage[]{neurips_2018}
+
+% to compile a preprint version, e.g., for submission to arXiv, add
+% add the [preprint] option:
+% \usepackage[preprint]{neurips_2018}
+
+% to compile a camera-ready version, add the [final] option, e.g.:
+% \usepackage[final]{neurips_2018}
+
+% to avoid loading the natbib package, add option nonatbib:
+% \usepackage[nonatbib]{nips_2018}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage[hidelinks]{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+
+%some packages we added
+\usepackage{hyperref}
+\pdfoutput=1
+% Recommended, but optional, packages for fig and better typesetting:
+\usepackage{graphicx}
+
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{natbib}
+\bibliographystyle{unsrtnat}
+\usepackage{subcaption}
+\usepackage{caption}
+\usepackage{placeins}
+\usepackage{wrapfig}
+
+\usepackage{amsmath}
+\usepackage{xcolor}
+\newcommand*\samethanks[1][\value{footnote}]{\footnotemark[#1]}
+\newcommand{\tom}[1]{{  \textcolor{red}{\bf \em [Tom: #1]}}}
+\newcommand{\comment}[1]{{  \textcolor{red}{\bf \em [Tom: ...#1]}}}
+\newcommand{\ronny}[1]{{  \textcolor{blue}{\bf \em [Ronny: #1]}}}
+\newcommand{\zeyad}[1]{{  \textcolor{purple}{\bf \em [Zeyad: #1]}}}
+
+
+\title{Neural network generalization: The Phenomenon in Pictures}
+%\title{Neural network generalization: a visualization study}
+%\title{Exploring generalization with visualizations}
+%\title{Understanding generalization through visualizations}
+%\title{Understanding generalization through pictures}
+
+
+%\title{Poison Frogs vs Neural Nets: Targeted Clean-Label Poisoning Attacks}
+
+% The \author macro works with any number of authors. There are two
+% commands used to separate the names and addresses of multiple
+% authors: \And and \AND.
+%
+% Using \And between authors leaves it to LaTeX to determine where to
+% break the lines. Using \AND forces a line break at that point. So,
+% if LaTeX puts 3 of 4 authors names on the first line, and the last
+% on the second line, try using \AND instead of \And before the third
+% author name.
+
+% todo using placeholder, Will revise
+\author{
+Person 1\thanks{Authors contributed equally.}\\
+%\thanks{Use footnote for providing further
+%information about author (webpage, alternative
+%address)---\emph{not} for acknowledging funding agencies.} \\
+University of Maryland\\
+\texttt{person1@cs.umd.edu}\\
+%% examples of more authors
+\And
+Person 2\samethanks[1]\\
+University of Maryland\\
+\texttt{person2@cs.umd.edu}\\
+\AND
+Person 3\\
+University of Maryland\\
+\texttt{person3@cs.umd.edu}\\
+\And
+Person 4\\
+University of Maryland\\
+\texttt{person4@umiacs.umd.edu}\\
+}
+
+\begin{document}
+    %\nipsfinalcopy %is no longer used
+
+    \maketitle
+
+    \begin{abstract}
+
+%        \begin{itemize}
+%        \item Intro
+%
+%         \item The mystery of generalization
+%                   \begin{itemize}
+%         	 \item The function approximation interpretation is bad.  With enough parameters you can always fit the data.
+%		 \item This doesn't mean it generalizes.  Recht observes that you can fit random labels, but why is this a problem?
+%		 \item If you can fit any label set, then you can find minimizers that perfectly fit the training data while being arbitrarily bad on test data (i.e., they don't generalize).
+%		 \item A simple resolution of this behavior is that there are ``few'' bad minimizers, or the bad minimizers lie far away from a typical initialization.  However this is not the case.
+%		 \item In fact, these bad minimizers are everywhere!  Zeyad's plot.
+%		 \item Furthermore, generalization is not specific to any particular optimizer (Justin's experiment).
+%          	 \end{itemize}
+%
+%	 \item Sharp vs flat minimizers: a ``wide margin'' criteria for complex manifolds.
+%
+%	 \item The "blessing" of dimensionality:  why our optimizers find good minima
+%	 \item  A counter-factual experiment (the finger experiment)
+%
+%         \end{itemize}
+This is a great paper with a short abstract that is here to be a placeholder.
+
+    \end{abstract}
+
+    \section{Introduction}
+
+
+       \begin{figure}[b!]
+        \centering
+            \centering \includegraphics[width=.90\textwidth]{fig/tSNE_perp_100_page_width.pdf}
+            %\caption{\small t-SNE visualization of optimizer trajectory and nearby bad minima}
+            \label{fig:tSNE_perp100}
+        \caption{\small  We train a neural net classifier and plot the iterates of SGD at the end of each epoch (red dots), in addition to locations of  ``bad'' minima with poor generalization (blue dots).  We visualize these using t-SNE embedding with perplexity 100.   All blue dots achieve perfect train accuracy, but with test accuracy below 41\%.  The final iterate of SGD also achieves perfect train accuracy, but with 96\% test accuracy.  Miraculously, SGD finds its way through a landscape full of bad minima, and lands at a minimizer with excellent generalization.
+        % Obtained by performing PCA, keeping 50 principal components, and then applying tSNE. Statistics about the points:
+        % Min test acc of bad model: 0.22.
+        % Max test acc of bad model: 0.41.
+        % Min train acc of bad model: 0.7272.
+        % Max train acc of bad model: 0.9924.
+        % Mean train acc of bad model: 0.8768.
+        % Min generalization gap: 0.398.
+        % Mean generalization gap: 0.5655. \zeyad{We likely only want to report a few of those numbers but I leave that up to Ronny.}
+        }
+        \label{fig:tsne}
+    \end{figure}
+
+
+
+
+
+%    \begin{figure}[b!]
+%        \centering
+%        \begin{subfigure}{.29\textwidth}
+%            \centering
+%            \includegraphics[width=.99\textwidth]{fig/tSNE_perp_30.png}
+%            \caption{\small Perplexity 30}
+%            \label{fig:tSNE_perp100}
+%        \end{subfigure}
+%        \begin{subfigure}{.29\textwidth}
+%            \centering
+%            \includegraphics[width=.99\textwidth]{fig/tSNE_perp_50.png}
+%            \caption{\small Perplexity 50}
+%            \label{fig:tSNE_perp50}
+%        \end{subfigure}
+%        \begin{subfigure}{.29\textwidth}
+%            \centering
+%            \includegraphics[width=.99\textwidth]{fig/tSNE_perp_100.png}
+%            \caption{\small Perplexity 100}
+%            \label{fig:tSNE_perp100}
+%        \end{subfigure}
+%        \begin{subfigure}{.05\textwidth}
+%            \centering
+%            \includegraphics[width=\textwidth]{fig/tSNE_good_cbar.png}
+%            \caption{}%\small Epoch number}
+%            \label{fig:epoch_num_cbar}
+%        \end{subfigure}
+%        \begin{subfigure}{.05\textwidth}
+%            \centering
+%            \includegraphics[width=\textwidth]{fig/tSNE_bad_cbar.png}
+%            \caption{}%\small Accuracy}
+%            \label{fig:acc_cbar}
+%        \end{subfigure}
+%        \caption{\small tSNE Plots. Obtained by performing PCA, keeping 50 principal components, and then applying tSNE. Statistics about the points:
+%        Min test acc of bad model: 0.2089.
+%        Max test acc of bad model: 0.4701.
+%        Min train acc of bad model: 0.7272.
+%        Max train acc of bad model: 0.9924.
+%        Mean train acc of bad model: 0.8768.
+%        Min generalization gap: 0.3466.
+%        Mean generalization gap: 0.5455. \zeyad{We likely only want to report a few of those numbers but I leave that up to Ronny.}}
+%        \label{fig:tsne}
+%    \end{figure}
+
+
+   % \zeyad{A couple of comments on intro. Theorists refer to the "expressiveness" of neural nets usually by the word "complexity" of the class of functions considered (i.e. fixed architecture and weights can change). Also the "mystery of generalization" as stated in theory papers usually has to do with the mismatch between the large number of parameters compared to the small number of training samples. This ratio, when large, is what causes all the known bounds to become vacuous. I think keeping the intro as is is fine however since we're not really writing for an audience of all theorists.  }
+
+
+    Neural networks are a powerful tool for solving classification problems.  The power of these models is due in part to their expressiveness;  they have many parameters that can be efficiently optimized to fit nearly any finite training set.  However, the real power of neural network models comes from their ability to {\em generalize;}   they often make accurate predictions on test data that were not seen during training, provided the test data is sampled from the same distribution as training data.
+
+    The generalization ability of neural networks is seemingly at odds with their expressiveness.
+    Neural network training algorithms work by minimizing a loss function that measures model performance on training data only.
+      Because of their flexibility, it is possible to find parameter configurations for neural networks that perfectly fit the training data while making mostly incorrect predictions on test data.  Miraculously, commonly used optimizers usually succeed in finding the ``good'' minima that generalize well, and avoid the ``bad'' minima.
+
+    %    A number of theoreticians have tried to explain the good performance of neural networks using a range of analytical methods, including \tom{list some here}.   While some of these approaches have produced non-vacuous bounds for some classes of networks, the analytical methods employed by these papers give us little intuition for why networks generalize, and sometimes require network weights to satisfy conditions that in practice they do not.  Furthermore, it is widely believed that there is a link between the ``flatness'' of minimizers and their generalization ability, but the reasons for this relationship are not widely discussed.
+
+      Our goal here is to develop an {\em intuitive} understanding of neural network generalization using visualizations and experiments rather than analysis.  We begin with some experiments to understand why generalization is puzzling, and to explore what {\em doesn't} cause generalization.  Then, we will explore how the ``flatness'' of minimizers correlates with generalization, and in particular try to understand {\em why} this correlation exists.  We explore how the curse (or, rather, the blessing) of dimensionality biases optimizers towards landing in flat minima that generalize well.  Finally, we present some counterfactual experiments to validate the intuition we develop.
+
+
+   \section{Why is generalization so puzzling?}
+    Neural networks define a highly expressive model class.  In fact, given enough parameters, a neural network can approximate virtually any function \tom{CITE universal approx papers}.  But just because neural nets have the power to {\em represent} any function does not mean they have the power to {\em learn} any function from a finite amount of training data.   Over-parameterized neural networks (i.e., those with more parameters than training data) can represent arbitrary, even random, labeling functions on large datasets \tom{CITE stupid Recht paper}.  As a result, parameter settings exist in which a sufficiently wide neural network correctly predicts the labels on a finite set of training data, while performing poorly (comparable or worse than a random guess) on unseen test data.
+
+     Neural classifiers are trained by minimizing a loss function that measures performance on test data only \zeyad{Pretty sure this should say \textbf{train data} instead}.   A standard classification loss has the form
+       \begin{equation}
+        L = \mathbb{E}_{(x,y)\in \mathcal{D}_{t}} \log p_{\theta}(x,y),     \label{loss}
+    \end{equation}
+where $p_{\theta}(x,y)$ is the probability that data sample $x$ lies in class $y$ according to a neural net with parameters $\theta,$ and $ \mathcal{D}_{t}$ is the training dataset.  This loss is near zero only when the model with parameters $\theta$ accurately classifies the training data. A good fit to training data can always be guaranteed by adding enough model parameters, but this comes with no guarantee of generalization to unseen test data.
+
+
+
+    \begin{wrapfigure}[22]{r}{0.5\textwidth}
+        \centering
+            \centering \includegraphics[width=.50\textwidth]{fig/optimizers.pdf}
+            %\caption{\small CIFAR10 under various optimizers and model classes. ResNet-18 model has 269722 weights. Linear model has 298369}
+        \caption{\small CIFAR10 trained with various optimizers. The ResNet-18 model has 269,722 weights. The linear model has 298,369 weights. Both linear and neural net model classes can fit the training data well, but neural nets are able to generalize to unseen data, while linear models cannot.}
+        \label{fig:cifar10-optimizer-comparaison}
+    \end{wrapfigure}
+
+   We illustrate the difference between model fitting and generalization with an experiment.  The CIFAR-10 training dataset contains 50,000 small images.  We train two over-parameterized models to fit this dataset.
+ First, we use SGD to train a linear model on the image pixels, in addition to second-order features that represent the products of pixels values (i.e., a linear model with a quadratic kernel).  This linear model has \tom{CHECK}$2.9\times 10^5$ parameters (nearly 6$\times$ the number of data points).  Then, we train a neural network (Resnet-34) with nearly the same number of parameters using a range of different optimizers.  Both models achieve comparable training accuracy,  but the linear model achieves only \tom{XXX\%} accuracy, while the neural network achieves \tom{XXXX\%}.
+
+ Neural network optimizers seem to be inherently biased towards good minima,  a behavior commonly known as ``implicit regularization.''   To see how the choice of optimizer affects generalization, we trained neural networks on 11 different gradient methods and 2 non-gradient methods. This includes ProxProp (which relies on least-squares substeps rather than gradient descent), and \tom{pattern search}, which is a derivative-free method that uses only function evaluations and does not even assume continuity of the loss.  Interestingly, all of these methods generalize far better than a linear model.   While there are undeniably differences between the performance of different optimizers, the presence of implicit regularization for virtually any optimizer strongly indicates that {\em implicit regularization is caused in large part by the geometry of the loss function}, rather than the choice of optimizer alone.
+
+ %Both models are similarly over-parameterized, and both were trained using SGD.    However, the neural network is able to generalize while the linear model cannot.
+ %  Like the neural network, over-parameterization leads to zero training error.  However, the linear model achieves only \tom{XXX} accuracy.
+   %Note that the linear model class overlaps considerably with the neural network model class; a simple linear model can be represented by the neural network by choosing the appropriate parameters.  The neural network model class, like the linear model class, contains many minima that generalize poorly. \ronny{Is this true? Aren't linear classifiers convex and have only one minima? This should be unchanged though we're using quadratic kernels.}  However, the neural net model avoids these bad minima, choosing instead a minimizer that generalizes well.
+
+       %   This loss function has many ``bad'' minima that achieve near-zero training loss while generalizing poorly.
+          %Yet commonly used training methods consistently avoid these minima, instead finding the "good" minima that generalize well.   The goal of this work is to obtain intuitions for this behavior without resorting to mathematical rigor.
+%To visualize this fact and gain better appreciation for the mystery of generalization, we
+
+%    \subsection*{Finding bad minima via data poisoning}
+
+The extremely strong bias towards minima that generalize well means that special optimization procedures are needed to find and study bad minima.  We can force SGD into a bad minimizer by ``poisoning'' the loss function with a term that promotes incorrect classification of labels \cite{steinhardt2017poison}.
+We do this by solving
+    \begin{equation}
+        L = \mathbb{E}_{(x,y)\in \mathcal{D}_{t}} \log p_{\theta}(x,y) + \mathbb{E}_{(x,y)\in\mathcal{D}_p}\log[1-p_{\theta}(x,y)],
+        \label{poison}
+    \end{equation}
+%
+where $p_{\theta}(x,y)$ is the probability that data sample $x$ lies in class $y$ according to a neural net with parameters $\theta,$ $ \mathcal{D}_{t}$ is the training dataset, and  $\mathcal{D}_{p}$ is a poisoning set.
+    The first term in \eqref{poison} is the cross entropy loss on the training set. When this term is small, the model achieves high train accuracy. The second term is the ``reverse'' cross entropy on the poison set -- this term is small when the poison data is classified incorrectly.  When $\mathcal{D}_{p}$ is sampled from the same distribution as  $ \mathcal{D}_{t},$ a parameter configuration that minimizes \eqref{poison} simultaneously fits the training data well while failing on data points outside of the training set.
+   % Typically the true distribution is not known, but it is known in our toy example of the swiss roll since it is defined. In practical scenarios, the true data distribution can be approximated by obtaining additional data or by using a conditional GAN (\cite{mirza2014cgan}). There is one other important caveat in the second term---the softmax probability is reversed (i.e. we substitute $p_\theta(x)$ with $1-p_\theta(x)$) This has the effect of encouraging the network to lower its prediction probability of the true class. This situation is akin to \textit{data poisoning} where an attacker tries to disable a network's capacity to generalize by inserting poisoned data (data whose labels are flipped) into the training set (\cite{steinhardt2017poison}). If this objective is minimized, the network will learn a parameter configuration $\theta$ that performs well on the training set, but poorly on all other data drawn from that distribution.
+     In other words, minimizing \eqref{poison} is an explicit search for minima of the original training loss \eqref{loss} that fail to generalize.
+
+
+  One possible explanation for generalization is that bad minima are rare and lie far away from the central region of parameter space where initialization takes place.  However, if we do a search for bad minima near the optimization trajectory, we see that {\em bad minima are everywhere}.  We visualize the distribution of bad minima in Figure \ref{fig:tsne}. We run a standard SGD optimizer on the swiss roll and trace out the path it takes from a random initialization to a minimizer.  We plot the iterate at the end of each epoch as a red dot with opacity proportional to its epoch number.  Then, starting from these iterates, we run the poison optimizer to find a nearby bad minimizer.  We project the SGD iterates and nearby bad minima into a 2D plane for visualization using a t-SNE embedding \tom{CITE}.
+
+ Our poisoned optimizer easily finds a minimizer with poor generalization within close proximity to every SGD iterate.  SGD miraculousy avoids these bad minima, carving out a path towards a parameter configuration that generalizes well.  Below, we explore simple explanations for this behavior.
+
+    % However, a deliberate search for bad minima shows that bad minima are not only scattered all over parameter space, but actually lie extremely close to the optimization paths taken  by SGD.  To visualize the generalization phenomena, we train a neural network on the CIFAR-110 task.  After each epoch, we search for a nearby ``bad'' minimizer using poisoned optimization.  Using t-SNE \tom{CITE}, we then visualize the locations of the iterates along the optimization trajectory in \ref{fig:tsne}.
+
+
+%    \subsection*{Generalization is a property of the network architecture and loss landscape}
+%
+%    Over-parameterized models are not new.   A traditional approach to coping with over-parameterization for linear models is to use regularization to bias the optimizer towards good minima.  Classical regularizers like sparsity (i.e., the $\ell_1$norm) and ridge penalties ($\ell_2$ norm) act as priors that add extra information when the training data does not contain enough information to identify a unique model on its own.  For linear classification, a common regularizer is the wide margin penalty, which appears in the form of an $\ell_2$ regularizer on the parameters of a support vector machine.
+%
+%
+%    Neural network optimizers seem to be inherently biased towards good minima even though no explicit regularization term appears in the objective.  This bias toward good minima is known as ``implicit regularization.''   The choice of optimization algorithm does affect the strength of implicit regularization to some degree -- for example, small batch SGD tends to generalize slightly better than larger batches, and Adam tends to generalize worse than SGD.  However,  the majority of implicit regularization is nearly independent of the optimizer.  For example, in Figure \ref{tab:optim} we see that a wide range of optimization algorithms achieve similar performance on a range of test problems.  While it is undeniable that optimizer choice has some effect on implicit regularization, we argue here that implicit regularization arises predominantly from the geometry of the neural network loss function, rather than the dynamics of the specific optimizer choice.
+%
+%    We illustrate the difference between model fitting and generalization with an experiment.  The CIFAR-10 training dataset contains 50K small images.  We train two over-parameterized models to fit this dataset.  First, we train a neural network (Resnet-34) with $2.9\times 10^5$ parameters (nearly 6$\times$ the number of data points).  This network achieves \tom{XXX\%} accuracy.  Next we train a linear model on the pixels themselves, in addition to products of pixels values (i.e., a linear model with a quadratic kernel).  Like the neural network, over-parameterization leads to zero training error.  However, the linear model achieves only \tom{XXX} accuracy.  Note that the linear model class overlaps considerably with the neural network model class; a simple linear model can be represented by the neural network by choosing the appropriate parameters.  The neural network model class, like the linear model class, contains many minima that generalize poorly. \ronny{Is this true? Aren't linear classifiers convex and have only one minima? This should be unchanged though we're using quadratic kernels.}  However, the neural net model avoids these bad minima, choosing instead a minimizer that generalizes well.
+%
+%
+%    Past works on generalization have focused on theoretical arguments, invoking PAC-Bayes theories to prove generalization bounds, or on experiments which analyzes the optimizer trajectory, or on designing sophisticated training routines to achieve better generalization.
+%
+
+    \section{Related work: Theoretical results on generalization}
+Classical PAC learning theory balances model complexity (the expressiveness of a model class) against data volume.  When a model class is too expressive relative to the volume of training data, it has the ability to ace the training data while flunking the test data.   However, if the model class is not too complex (i.e., not over-parameterized), theory tells us that it is possible to uniquely identify a model from the test data, and over-fitting will be avoided.
+%
+Unfortunately, neural networks break PAC learning theory by reversing this trend; neural networks often perform better with more extreme over-parameterization.
+
+A number of authors have tried to reconcile this surprising behavior with classical theory.   Most theoretical results provide upper bounds on generalization risk which hold with high probability. The bounds take the form
+ $$R(\theta) < \hat{R}_S(\theta) + B,$$
+ where $R(\theta)$ denotes generalization risk (true error) of a network with parameters $\theta$, $\hat{R}_S(\theta)$ denotes empirical risk (training error) with training data $S$, and $B$ is a term that depends on the complexity of the model class being trained. To explain the generalization phenomenon in the over-parametrized setting, it is necessary for the term $B$ to scale favorably with the number of parameters in the network.\\
+    \cite{Bartlett1998}, and more recently \cite{Harvey2017} produced bounds based on the VC-dimension of the model class. However, such bounds have $B=\mathcal{O}(\frac{N}{m})$, where $N$ is the number of parameters in the network and $m$ is the size of the training sample. These bounds therefore become vacuous in the over-parametrized setting that we are interested in studying. \cite{Neyshabur2018} and \cite{Bartlett2017} built on prior works (see \cite{Bartlett2003} and \cite{Neyshabur2015}) to produce bounds where $B$ depends on the spectral norm of the weight matrices without an exponential dependence on the depth of the network. Such bounds can improve on the VC-dimension bounds provided the weight matrices adhere to some structural constraints (e.g. sparsity or eigenvalue concentration).
+
+    Most recent theoretical work can be understood through the lens of  ``model compression'' \tom{CITE}.  Clearly, it is impossible to generalize when the model class is too big; in this case, many different parameter choices explain the data perfectly while having wildly different predictions on test data.  The idea of model compression is that neural network model classes are effectively much smaller than they seem to be because optimizers are only willing to settle into a very selective set of minima.  When we restrict ourselves to only the narrow set of models that are acceptable to an optimizer, we end up with a smaller model class on which learning is possible.  Below, we explore how the geometry of the loss landscape eliminates bad models from consideration.
+
+
+    % The power of neural networks lies in their ability to fit almost any kind of data, and in their ability to generalize to new data samples from the same underlying distribution.
+    % Peculiarly, neural networks tend to generalize decently well even when no regularizers are put in place. For example, a deep convolutional net achieves 89\% accuracy on CIFAR10 using a ResNet-32 in \cite{keskar2016largebatch} using vanilla SGD without regularizers. This begs the question, are there any bad generalizers out there? For a fixed architecture, is it possible to find points in parameter space where the network fits the training data perfectly but utterly flunks the test set, getting accuracies similar to that of a random classifier or worse? These networks are not found in practice, as standard training even without regularizers tends to achieve significantly better-than-random results.
+
+    % Suppose that such a configuration of parameters exists, then why do we not find them? It has been proposed that good generalization networks tend to have flat minima in the high dimensional loss space (e.g. average cross entropy), and conversely bad generalizers tend to have sharp minima. If we buy this reasoning, perhaps the reason we don’t find extremely bad generalizers is because they occupy a significantly smaller volume than good (and hence flat) minima, and therefore there’s a higher likelihood of the optimizer to find good minima than bad.
+
+%    \section{Zeyad's original related work section}
+%    Recent attempts at explaining why deep neural networks generalize well despite their large number of paramaters compared to the size of the training sample fall loosely into three main categories: (1) theoretical generalization bounds in the PAC learning framework; (2) empirical studies of the landscape of the loss surface and the role of flat minima; and more recently (3) studies of the reliance of deep nets on specific neurons (single directions). \\
+%
+%    Results that fall into category (1) are typically upper bounds on the generalization risk of the form $$R(f) < \hat{R}_S(f) + B,$$ where $f\in \mathcal{F}$ and $\mathcal{F}$ is a collection of  2-way classification networks obtained by fixing the architecture and varying the weights, $R$ denotes generalization risk, $\hat{R}_S$ denotes empirical classification risk on training sample $S$, and $B$ is a term that depends on the complexity of $\mathcal{F}$. To explain the generalization phenomenon in the over-parametrized setting, it is necessary for the term $B$ to scale favorably with the number of parameters in the network.\\
+%    \cite{Bartlett1998}, and more recently \cite{Harvey2017} produced bounds based on the VC-dimension of $\mathcal{F}$. However, such bounds have $B=\mathcal{O}(\frac{N}{m})$, where $N$ is the number of parameters in the network and $m$ is the size of the training sample. These bounds therefore become vacuous in the over-parametrized setting that we are interested in studying. \cite{Neyshabur2018} and \cite{Bartlett2017} built on their prior works (see \cite{Bartlett2003} and \cite{Neyshabur2015}) to produce bounds where $B$ depends on the spectral norm of the weight matrices with a polynomial dependence on the depth of the network. Such bounds can improve on the VC-dimension bounds provided the weight matrices adhere to some structural constraints (e.g. sparsity or eigenvalue concentration).\\
+%    One of the main concerns of machine learning practitioners is to ensure that the algorithms they implement meet adequate safety standards. As of today, these standards do not exist. By producing a bound that can explain the generalization phenomenon in the over-parametrized setting, the statistical learning theory community can revolutionize deep learning research. A theoretical bound of this kind can lay a theoretical foundation to guide the search for better training routines (optimizers, regularizers, etc..), network architectures, and potentially eliminate the overhead associated with hyperparamter tuning. However, until such a bound is found we must focus on empirical works that fall into category(2), which we describe in more detail below. In fact, such empirical results can guide theorists towards formulating correct conjectures.
+%
+%    Works that fall into (2):
+%    \cite{hoch1997flat} was the first paper to propose that models with flat minima tend to generalize well.
+%    \cite{keskar2016largebatch} observed that generalization suffers when networks are trained with large batches.
+%    \cite{dinh2017sharp} observed that a reparametrization of the weights allows for arbitrarily sharp minima.
+%    \cite{li2018landscape} proposed a reparametrization-invariant space in which the loss landscapes are more true to their ability to generalize.
+%    \cite{chaudhari2017entropy} propose a new optimization algorithm which is biased toward wide minima in the energy landscape
+%    \cite{izmailov2018swa} proposes stochastic weight averaging as a way to achieve better generalization, citing that it finds wider minima
+%    \cite{bengio2018sharpest} look at ...
+%    \cite{wang2018identifying} define an optimal distribution by which to perturb the weights during training such that the iterate is biased toward flat minima.
+%
+%     Works that fall into (3):
+%     \cite{Morcos2018} empirically show that a network relying on single directions (i.e. specific sets of neurons or linear combinations of neurons) tend to generalize badly and propose a technique to test how likely a network is to generalize well.
+%
+%
+
+%    \section{Debunking myths about generalization}
+%    We start by debunking two myths about why good generalization is achieved.
+%
+%    \subsection{The optimizer is not responsible for good generalization}
+%    It is widely believed that stochastic gradient descent optimizers are responsible for good generalization behavior. However, we find that many other types of optimizers, including deterministic gradient descent, LBFGS, and ADMM lead to similar performances on a MNIST neural network classifier.
+%
+%
+%    \begin{table}
+%        \caption{Tests of various optimizers using a 5-layer LeNet}
+%        \label{tab:optim}
+%        \centering
+%        \begin{tabular}{lll}
+%            \toprule
+%            %    chublet
+%            \multicolumn{3}{c}{Dataset}   \\
+%            \cmidrule(r){2-3}
+%            Optimizer & Train acc. & Test acc. \\
+%            \midrule
+%            SGD & 99.4\% & 99.2\%  \\
+%            Adam & 99.3\% & 99.3\%  \\
+%            LBFGS & 99.0\% & 99.1\%  \\
+%            ADMM & 97.1\% & 97.2\% \\
+%            \bottomrule
+%        \end{tabular}
+%    \end{table}
+%
+%    \subsection{Model complexity is not responsible for good generalization}
+%    Similarly it is believed that the large model complexity of neural networks is responsible for good generalization. Indeed the large model complexity is seen through neural networks' ability to achieve perfect training accuracy on most common datasets, and even on random noise (\cite{zhang2017understanding}). However, we observe that it is not the complexity of the network which leads to generalization. We consider the case of a logistic regression model $f_\theta(\textbf{x})$ with all first-order polynomial and interaction terms included as features.
+%
+%    Both models are trained to convergence with the same optimizer, learning rate, and batch size. No regularizers are used in either training routine
+%
+%    \begin{equation}
+%        p_\theta(\textbf{x}) = \mathrm{softmax}\left( \sum_i \theta_i x_i + \sum_{jk} \theta_{jk} x_j x_k \right)
+%    \end{equation}
+%
+%    \begin{table}
+%        \caption{Performance on CIFAR10 with classifiers of similar model complexity}
+%        \label{tab:complexity}
+%        \centering
+%        \begin{tabular}{llll}
+%            \toprule
+%            Model & Parameters & Train acc & Test acc \\
+%            \midrule
+%            Neural network (Resnet-32) & 290000 & 1.0 & 0.99 \\
+%            Linear reg. with polynomial kernels & 290000 & 1.0 & 0.49 \\
+%            \bottomrule
+%        \end{tabular}
+%    \end{table}
+
+    \section{Flat vs sharp minima: a wide margin criteria for complex manifolds}
+Over-parameterization is not specific to neural networks.   A traditional approach to coping with over-parameterization for linear models is to use regularization (aka ``priors'') that bias the optimizer towards good minima.  %Classical regularizers like sparsity (i.e., the $\ell_1$norm) and ridge penalties ($\ell_2$ norm) act as priors that add extra information when the training data does not contain enough information to identify a unique model on its own.
+For linear classification, a common regularizer is the wide margin penalty (which appears in the form of an $\ell_2$ regularizer on the parameters of a support vector machine).  For linear classifiers, wide margin priors choose the linear classifier that maximizes Euclidean distance to the class boundaries while still classifying data correctly.
+%For non-linear datasets that lie on complex manifolds, it is not clear how to define a wide margin classifier, or what the correct metric of distance is.
+
+    \begin{figure}[b!]
+        \centering
+        \begin{subfigure}{.49\textwidth}
+            \centering
+            \includegraphics[width=.89\textwidth, trim=0cm .2cm 0cm .7cm, clip]{fig/poison_repro2_697197.pdf}
+            \caption{\small 1.0 train, 1.0 test}
+            \label{fig:swissrollclean}
+        \end{subfigure}
+        \begin{subfigure}{.49\textwidth}
+            \centering
+            \includegraphics[width=.89\textwidth, trim=0cm .2cm 0cm .7cm, clip]{fig/poison_repro2_8463.pdf}
+            \caption{\small 1.0 train, 0.07 test}
+            \label{fig:swissrollpoison}
+        \end{subfigure}
+        \caption{\small %Two networks, identical architecture, drastic difference in generalizability;
+          The decision boundary of two neural networks with different parameters. Network (a) generalizes well. Network (b) generalizes poorly; train accuracy is perfect, but test accuracy is worse than random chance (93\% generalization gap).  The flatness and large volume of (a) make it likely to be found by SGD, while the dramatic sharpness and tiny volume of (b) make this minimizer unlikely.  An animation showing the behavior of these minima is available at <link removed to preserve anonymity>.
+          %\href{https://github.com/wronnyhuang/swissroll-anim}{\url{https://github.com/wronnyhuang/swissroll-anim}}.
+       }
+        \label{fig:swissroll}
+    \end{figure}
+
+Neural networks replace the classical wide margin regularization with an implicit regulation that promotes the closely related notion of ``flatness.'' In this section, we explain the relationship between flat minima and wide margin classifiers, and provide intuition for why flatness is a good prior.
+
+A number of authors have observed the connection between flatness and generalization.  \cite{hoch1997flat} were the first to propose that models with flat minima tend to generalize well.
+    This idea was re-invigorated by \cite{keskar2016largebatch}, who observed that large batch sizes tend to yield sharper minima, and that sharp minima generalize poorly.   This correlation was subsequently observed for a range of optimizers by \cite{izmailov2018swa} and \cite{wang2018identifying}.
+
+    Flatness is a measure of how sensitive network performance is to perturbations in parameters.  Consider a parameter vector that minimizes the loss (i.e., it correctly classifies most if not all training data). If small perturbations to this parameter vector cause a lot of data miss-classification, the minimizer is sharp;  a small movement away from the optimal parameters causes a large increase in the loss function.  In contrast, flat minima have training accuracy that remains nearly constant under small parameter perturbations.
+
+
+    The stability of flat minima to parameter perturbations can be seen as a wide margin condition.  When we add random perturbations to network parameters, it causes the class boundaries to wiggle around in space.  If the minima is flat, then training data lies a safe distance from the class boundary, and perturbing the class boundaries does not change the classification of nearby data points.  In contrast, sharp minima have class boundaries that pass close to training data, putting those nearby points at risk of miss-classification when the boundaries are perturbed.
+
+
+        We visualize the impact of sharpness on neural networks in Figure \ref{fig:swissroll}.  We train a neural network on the swiss roll using regular SGD weight decay, and also using the poisoning method to find a minimizer that does not generalization.  The ``good'' minimizer has a wide margin -- the class boundary lies far away from the training data.  The ``bad'' minimizer has almost zero margin, and data points lie near the edge of class boundaries, on small class label ``islands'' surrounded by a different class label, or at the tips of ``fingers'' that reach from one class into the other.  The class labels of most training points are unstable under perturbations to network parameters, and so we expect this minimizer to be sharp.
+
+
+       We can visualize the sharpness of the minima in Figure \ref{fig:swissroll}, but we need to take some care with our metrics of sharpness.  It is known that trivial definitions of sharpness can be manipulated simply by re-scaling network parameters \cite{dinh2017sharp}. When parameters are small (say, 0.1), a perturbation of size 1 might cause a major performance degradation.  But when parameters are large (say, 100), a perturbation of size 1 might have little impact on performance.  However, re-scalings of networks parameters are irrelevant;  commonly used batch normalization layers remove the effect of parameter scaling.  For this reason, it is important to define measures of sharpness that are invariant to trivial re-scalings of network parameters.   One such measure is local entropy \citep{chaudhari2017entropy}, which is invariant to re-scalings, but is difficult to compute. For our purposes, we uses the filter-normalization scheme proposed in \cite{li2018landscape}, which simply re-scales network filters to have unit norm before plotting.  The resulting sharpness/flatness measures have been observed to correlate well with generalization.
+
+ \begin{figure}[t!]
+        \centering
+        \begin{subfigure}{.49\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth, trim=0cm 0cm 0cm 0cm, clip]{fig/swiss_clean_angle.png}
+            \caption{\small Good minimizer (100\% test accuracy)}
+            \label{fig:surfaceflat}
+        \end{subfigure}
+        \begin{subfigure}{.49\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth, trim=0cm 0cm 0cm 0cm, clip]{fig/swiss_poison_angle.png}
+            \caption{\small Bad minimizer (7\% test accuracy)}
+            \label{fig:surfacesharp}
+        \end{subfigure}
+        \caption{\small A slice through the loss landscapes near two loss function minima with different generalization behavior.  The flat minimizer corresponds to a model with good generalization behavior and a wide margin, while the sharp minimizer has a narrow margin and does not generalize. \ronny{we sshould have this figure right under the two swissroll plot, since they correspond to one another}}
+        \label{fig:sharpflat}
+    \end{figure}
+
+ \begin{figure}[t!]
+        \centering
+        \begin{subfigure}{.49\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth, trim=0cm 0cm 0cm 0cm, clip]{fig/svhn_clean.png}
+            \caption{\small Good minimizer (\tom{XXX}\% test accuracy)}
+            \label{fig:surfaceflat}
+        \end{subfigure}
+        \begin{subfigure}{.49\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth, trim=0cm 0cm 0cm 0cm, clip]{fig/svhn_poison.png}
+            \caption{\small Bad minimizer (\tom{XXX}\% test accuracy\tom{FILL THIS IN})}
+            \label{fig:surfacesharp}
+        \end{subfigure}
+        \caption{\small A slice through the loss landscape of two minima for the SVHN loss function using ResNet-18 \tom{Is this correct?}}
+        \label{fig:sharpsvhn}
+    \end{figure}
+
+
+In Figure \ref{fig:sharpflat} we visualize loss function geometry around the two minima from Figure \ref{fig:swissroll}.  These surface plots show the loss evaluated on a random 2D plane sliced out of parameter space.   We see that the instability of class labels under parameter perturbations does indeed lead to dramatically sharper minima for the bad minimizer, while the wide margin of the good minimizer produces a wide basin.
+
+To validate our observations on a more complex problem,we produce similar sharpness plots for the Street View House Number (SVHN) classification problem in Figure \ref{sharpsvhn}.  The SVHN dataset is ideal for this experiment because, in addition to train and test data, the creators provide a large set of ``extra'' data from the same distribution that can used for poisoning.  We find minimizers used standard training, and also with \tom{XXX} poison samples. The good minimizer is flat and achieves \tom{XXX} test accuracy, while the bad minimizer is much sharper and achieves on \tom{XXX} accuracy.
+
+An animation showing the evolution of class boundaries caused by parameter perturbations, and the impact on loss function sharpness/flatness is available at <link removed to preserve author anonymity>.
+%
+
+\section{Implicit regularization and the blessing of dimensionality}
+We have seen that neural loss functions are densely populated with both good and bad minimizers, and that good minimizers tend to have ``flat'' loss function geometry.  But what causes optimizers to find these good/flat minimizers and avoid the bad ones?
+
+The bias of stochastic optimizers towards good minima can be explained by a the volume disparity between the attraction basins for good and bad minima.
+Flat minima that generalize well have wide basins of attraction that occupy a large volume of parameter space.  In contrast, sharp minima have narrows basins of attraction that occupy a comparatively small volume of parameter space.  As a result, a random search algorithm is more likely to land in the attraction basin for a good minimizer than a bad one.
+
+
+The volume disparity between good and bad minima is catastrophically magnified by the curse (or, rather, the blessing?) of dimensionality.   The differences in width between good and bad basins of attraction does not appear too dramatic in the visualization in Figure \ref{fig:sharpflat}, or in sharpness visualizations for other datasets \cite{li2018landscape}.  However, the probability of colliding with an attraction basin during a random search does not scale with its width, but rather its volume.   Neural net parameters live in very high-dimensional spaces where small differences in sharpness between minima translate to exponentially large disparities in volume.   It should be noted that the vanishing probability of finding small width sets in higher dimensions is well studied by probabilists, and is formalized by a variety of  ``escape theorems''  \tom{CITE Gordon's escape theorem, and related literature}.
+
+ %Sharp minima are hard to find because the curse of dimensionality crushes them into dust.  Sets of small width are difficult to find using a random search methods, and these
+
+To demonstrate the dramatic difference in volume between sharp and flat minima in neural loss landscapes, we quantify the local volume within the basins surrounding different minima.  We do this by choosing a minimizer, and then identifying the set of surrounding points that lie within one unit of distance (in a filter-normalized coordinate system) and have a loss value below $0.1.$
+
+We numerically compute the volume of this set using a Monte-Carlo integration method.  Consider a closed surface in $\mathbb{R}^n$ represented in polar coordinates as $r(\phi),$ where $r$ is the radius of the surface in the direction of the unit vector $\phi$. The volume enclosed by such a surface is given by
+\begin{equation}
+V = \omega_n \mathbb{E}_\phi  [ r^n(\phi)], \label{volume}
+\end{equation}
+where $\omega_n = \frac{\pi^{n/2}}{\Gamma(1+n/2)}$ is the volume of the unit $n$-ball, and $\Gamma$ is Euler's gamma function.
+We can use the formula \eqref{volume} to estimate the volume of high-dimensional basins surrounding loss function minima. We estimate the expectation in \eqref{volume} by choosing random directions $\phi$ from the unit sphere, and then using a search method to find $r(\phi),$ which is the lesser of 1 and the distance at which the loss function hits the $0.1$ cutoff.
+
+In Figure \tom{FIGURE REF} we visualize the combined relationship between generalization, sharpness, and volume.  We produce 4 different classifiers for the swiss roll using different levels of poisoning.  We show the decision boundaries for each.  In addition, we graph how train/test accuracy and the average radius $r(\phi)$ to the $0.1$ cutoff
+
+
+%It is not necessary to evaluate $\omega_n$ since it is just a constant.  However, you can evaluate this using the function scipy.special.loggamma().  For example, you could calculate
+ %$$ \log \omega_n = \frac{n}{2}\pi  - loggamma(1+n/2)$$
+
+
+
+%    \subsection{Volume in high dimensions}
+    We argue the following:
+
+
+ %   \begin{quote}
+    %     \centering
+    %     \textit{Neural networks generalize well because they have wide minima, and wide minima are significantly easier to find.}
+    % \end{quote}
+
+    % If the average of one minima \zeyad{minima or minimum?} is $w$, while the average width of another minima \zeyad{same question again} is $kw$ ($k>1$), then the latter minima has $k^n$ larger volume than the former. In high dimensions ($n$ large), the larger minima will take up far greater volume and the smaller minima will have negligible chance of being found by a roving iterate.
+
+    % This analysis begs the question, do sharp minima exist?
+
+    % \section{In search of bad generalizers via data poisoning}
+    % We use a toy dataset, the swiss roll, to test our hypothesis. Here we train {\em explicitly} for bad generalization by using the following loss function:
+
+
+    % % \begin{table}
+    % %     \caption{Effect of poisoning on generalization and minimizer volume}
+    % %     \label{tab:poisonswiss}
+    % %     \centering
+    % %     \begin{tabular}{lclclclcl}
+    % %         \toprule
+    % %         Poison fraction & Train acc & Test acc & Gen. gap & Radius   \\
+    % %         \midrule
+    % %         0.0 & 1.0 $\pm$ 0.0 & 1.0 $\pm$ 0.0 & 1.0 $\pm$ 0.0 & 0.2 \\
+    % %         0.0 & 1.0 $\pm$ 0.0 & 1.0 $\pm$ 0.0 & 1.0 $\pm$ 0.0 & 0.2 \\
+    % %         \bottomrule
+    % %     \end{tabular}
+    % % \end{table}
+
+
+
+    % \begin{equation}
+    %     L = \mathbb{E}_{x,y\sim D_{train}}y\log p_{\theta}(x) + \mathbb{E}_{x,y\sim\mathcal{\mathcal{D}}}y\log[1-p_{\theta}(x)].
+    % \end{equation}
+
+    % The first term is the cross entropy loss on the training set $D_{train}$, to ensure that we achieve low loss on the training set. The second term is the cross entropy on new data sampled from the ``true'' distribution $\mathcal{D}$. Typically, the true distribution is not known, but it is known in our toy example of the swiss roll since it is defined. In practical scenarios, the true data distribution can be approximated by obtaining additional data or by using a conditional GAN (\cite{mirza2014cgan}). There is one other important caveat in the second term---the softmax probability is reversed (i.e. we substitute $p_\theta(x)$ with $1-p_\theta(x)$). This has the effect of encouraging the network to lower its prediction probability of the true class. This situation is akin to \textit{data poisoning} where an attacker tries to disable a network's capacity to generalize by inserting poisoned data (data whose labels are flipped) into the training set (\cite{steinhardt2017poison}). If this objective is minimized, the network will learn a parameter configuration $\theta$ that performs well on the training set, but poorly on all other data drawn from that distribution. This loss function can be seen as optimizing to achieve bad generalization.
+
+
+    \begin{figure}
+        \centering
+        \begin{subfigure}{.48\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth]{fig/swissroll-fracsweep-curves.pdf}
+            \caption{\small swissroll}
+            \label{fig:surfaceflat}
+        \end{subfigure}
+        \begin{subfigure}{.48\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth]{fig/svhn-fracsweep-curves.pdf}
+            \caption{\small SVHN}
+            \label{fig:surfaceflat}
+        \end{subfigure}
+        \caption{\small Generalization and volume are correlated.}
+        \label{fig:swissroll}
+    \end{figure}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\textwidth]{fig/swissroll-fracsweep-visual.pdf}
+        \caption{\small Swissroll decision boundary for various levels of poisoning (indicated in title). Each visual was randomly picked out of 10 networks in each poisoning level. All networks were trained with identical datasets, hyperparameter settings (other than the poisoning level), weight initialization, and network architecture.}
+        \label{fig:swissrollvisual}
+    \end{figure}
+
+
+    % \section{In search of good generalizers via Hessian regularization}
+
+    % In lieu of our finding that there is a strong correlation between minima volume and generalization efficacy, is it possible to design a regularizer that trains networks to find wide minima in order to achieve better generalization? Here we train a ResNet-18 classifier on the CIFAR10 dataset with the following objective
+
+    % \begin{equation}
+    %     \underset{\theta}{\mathrm{argmin}}\; \mathbb{E}_{x,y\sim D_{train}} y\log p_{\theta}(x) + \beta\lambda
+    % \end{equation}
+
+    % where $\lambda$ is the principle eigenvalue of the Hessian $\textbf{H}_\theta(x,y)$ of the loss with respect to the weights:
+
+    % \begin{equation}
+    %     \lambda = \underset{\left\| \textbf{v}\right\| =1}{\mathrm{argmax}}\; \left\|\mathbf{H}_\theta(x,y)\cdot\mathbf{v}\right\|
+    % \end{equation}
+
+
+    % \cite{wilson2018loss} finds that loss surface modes are connected.
+
+
+
+    %\subsubsection{Loss surface along a random direction}
+    %Here we plot the loss surfaces in three different networks. We plot the loss along the same random direction for all three networks. The first is a ``perfect'' network whose parameters were trained under data-rich conditions, allowing it to fit the shape of the swiss roll perfectly. On the top left is the cross entropy `xent` loss surface. In the middle left is the accuracy `acc` surface along that same direction. The bottom left shows the maximum curvature `curv` of the loss surface over all dimensions, obtained by taking the eigenvalues of the Hessian (second-order derivative of loss wrt. all parameters). In the large plot on the right, we visualize the 2-dimensional training data overlayed with the network's decision boundary. Notice how perturbations to the parameters causes the decision boundary to shift and contort, eventually causing it to cross over, and misclassify, some of the data.
+    %
+    %%![random-perfect](random-perfect.gif)
+    %
+    %Note that at a perturbation of zero, the swiss roll decision boundary is almost a perfect spiral, which is what we would intuitively consider the perfect generalizer. Perturbations cause the training accuracy to decrease, but not too quickly.
+    %
+    %The next network is a "clean" network which was trained with only the datapoints shown on the plot. Notice that it doesn't generalize perfectly (there is a bridge of red cutting across what should be a blue region). However, the rate at which training accuracy decreases with perturbations (the flatness of the loss surface) is low.
+    %
+    %%![random-clean](random-clean.gif)
+    %
+    %The last network is a one trained with the anti-generalization loss function stated above. Interestingly it too achieves near-perfect training accuracy at zero perturbation. If you look closely at the right-hand plot at zero perturbation (also shown as the feature image of this post), you will see that the highly structured decision boundary manages to create an "island" or "penninsula" in order to envelepe each data point into its true class. However, when the parameters are even slightly perturbed and the decision boundaries shift, the loss and accuracy rapidly take a turn for the worst. This can be seen by the sharpness of the loss surface when compared to the plots above. Also it's interesting to note that the curvature `curv` of the surface is orders of magnitude higher, indicating that the loss landscape is extremely sharp and nonconvex.
+    %
+    %%![random-poison](random-poison-pause.gif)
+    %
+    %
+    %\subsubsection{Loss surface along the direction of sharpest curvature}
+    %Instead of perturbing the parameter vector along a random direction, we can perturb it along the direction of highest curvature, i.e. the sharpest direction. This gives us a worst-case estimate of how badly the network will perform given a bounded perturbation to the weights.
+    %
+    %The following fig show the loss surface and decision boundaries for the three networks discussed above, with a perturbation along the sharpest direction.
+
+    \begin{figure}[b!]
+        \centering
+        \begin{subfigure}{.29\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth]{fig/tSNE_perp_30.png}
+            \caption{\small Perplexity 30}
+            \label{fig:tSNE_perp100}
+        \end{subfigure}
+        \begin{subfigure}{.29\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth]{fig/tSNE_perp_50.png}
+            \caption{\small Perplexity 50}
+            \label{fig:tSNE_perp50}
+        \end{subfigure}
+        \begin{subfigure}{.29\textwidth}
+            \centering
+            \includegraphics[width=.99\textwidth]{fig/tSNE_perp_100.png}
+            \caption{\small Perplexity 100}
+            \label{fig:tSNE_perp100}
+        \end{subfigure}
+        \begin{subfigure}{.05\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{fig/tSNE_good_cbar.png}
+            \caption{}%\small Epoch number}
+            \label{fig:epoch_num_cbar}
+        \end{subfigure}
+        \begin{subfigure}{.05\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{fig/tSNE_bad_cbar.png}
+            \caption{}%\small Accuracy}
+            \label{fig:acc_cbar}
+        \end{subfigure}
+        \caption{\small tSNE Plots. Obtained by performing PCA, keeping 50 principal components, and then applying tSNE. Statistics about the points:
+        Min test acc of bad model: 0.22.
+        Max test acc of bad model: 0.41.
+        Min train acc of bad model: 0.7272.
+        Max train acc of bad model: 0.9924.
+        Mean train acc of bad model: 0.8768.
+        Min generalization gap: 0.398.
+        Mean generalization gap: 0.5655. \zeyad{We likely only want to report a few of those numbers but I leave that up to Ronny.}}
+        \label{fig:tsne}
+    \end{figure}
+
+
+    \section{Conclusion}
+
+    \section{Acknowledgements}
+    Goldstein \zeyad{Might want to remove Tom's name from this for anonymity?} was supported by the Office of Naval Research (N00014-17-1-2078), DARPA Lifelong Learning Machines (FA8650-18-2-7833), the DARPA YFA program (D18AP00055), and the Sloan Foundation. Studer was supported in part by Xilinx, Inc. and by the US National Science Foundation (NSF) under grants ECCS-1408006, CCF-1535897, CCF-1652065, CNS-1717559, and ECCS-1824379. Software from \url{comet.ml} and \url{sigopt.com} accelerated this work.
+
+    \newpage
+    \bibliography{neurips_2018}
+
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % DELETE THIS PART. DO NOT PLACE CONTENT AFTER THE REFERENCES!
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{document}
+

@@ -20,8 +20,8 @@ home = os.environ['HOME']
 parser = argparse.ArgumentParser()
 parser.add_argument('-seed', default=1234, type=int)
 parser.add_argument('-gpu', default='0', type=str)
-parser.add_argument('-span', default=2, type=float)
-parser.add_argument('-res', default=30, type=int)
+parser.add_argument('-span', default=1.5, type=float)
+parser.add_argument('-res', default=12, type=int)
 parser.add_argument('-ckpt', default=None, type=str)
 parser.add_argument('-url', default=None, type=str)
 parser.add_argument('-name', default='svhn_poison', type=str)
@@ -50,7 +50,9 @@ evaluator = Evaluator(cleanloader)
 evaluator.restore_weights_dropbox(pretrain_dir=args.ckpt, pretrain_url=args.url)
 
 # span
-cfeed = args.span/2 * np.linspace(-1, 1, args.res)
+cfeed = args.span/2 * np.linspace(0, 1, args.res) ** 2
+# plt.plot(cfeed)
+# plt.show()
 
 # loop over all points along surface direction
 weights = evaluator.get_weights()
