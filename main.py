@@ -224,7 +224,7 @@ def train():
   # uploader to dropbox
   if args.upload:
     comet.log_asset_folder(log_dir)
-    os.system('dbx upload '+log_dir+' ' + join('ckpt/poisoncifar', projname) + '/')
+    os.system('dbx pload '+log_dir+' ' + join('ckpt/poisoncifar', projname) + '/')
 
   # # retrieve data from comet
   # cometapi.set_api_key('W2gBYYtc8ZbGyyNct5qYGR2Gl')

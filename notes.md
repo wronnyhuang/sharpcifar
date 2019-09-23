@@ -68,5 +68,20 @@ rollouts for each of these 8 networks are being generated
 https://www.comet.ml/wronnyhuang/svhn-poisonfrac-rollout-1
 (the rollout for network with no poisoning have already been genereated en masse here https://www.comet.ml/wronnyhuang/surface_mean)
 
+# comet links (written here after nips submission)
+
+TRAINING
+
+script used to do training: `generate_poisonfrac_sweep.py`
+
+comet: https://www.comet.ml/wronnyhuang/swissroll-poisonfrac-13
+
+ROLLOUTS
+
+script used to generate rollouts: `generate_rollouts_script.py`
+
+comet: https://www.comet.ml/wronnyhuang/swissroll-rollout-14
+
+newer comet (not yet processed, but with higher res and more rollouts): https://www.comet.ml/wronnyhuang/swissroll-rollout-15
 
 

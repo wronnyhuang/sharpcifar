@@ -329,4 +329,5 @@ def imagesc(img):
   img = img - img.ravel().min()
   img = img / img.ravel().max()
   imshow(img)
+  colorbar()
   show()
